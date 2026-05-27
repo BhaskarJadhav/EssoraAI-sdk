@@ -11,19 +11,37 @@ import worker from "../src/index";
 // `Request` to pass to `worker.fetch()`.
 const IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
 
-describe("Hello World worker", () => {
-	it("responds with Hello World! (unit style)", async () => {
+describe("Clicky orchestration worker", () => {
+	it("lists production routes at the root URL (unit style)", async () => {
 		const request = new IncomingRequest("http://example.com");
 		// Create an empty context to pass to `worker.fetch()`.
 		const ctx = createExecutionContext();
 		const response = await worker.fetch(request, env, ctx);
 		// Wait for all `Promise`s passed to `ctx.waitUntil()` to settle before running test assertions
 		await waitOnExecutionContext(ctx);
-		expect(await response.text()).toMatchInlineSnapshot(`"Hello World!"`);
+		expect(response.headers.get("access-control-allow-origin")).toBe("*");
+		expect(await response.json()).toMatchObject({
+			success: true,
+			routes: {
+				health: "/health",
+				chat: "/ai/chat",
+				sttToken: "/voice/stt-token",
+				tts: "/voice/tts",
+			},
+		});
 	});
 
-	it("responds with Hello World! (integration style)", async () => {
+	it("lists production routes at the root URL (integration style)", async () => {
 		const response = await SELF.fetch("https://example.com");
-		expect(await response.text()).toMatchInlineSnapshot(`"Hello World!"`);
+		expect(response.headers.get("access-control-allow-origin")).toBe("*");
+		expect(await response.json()).toMatchObject({
+			success: true,
+			routes: {
+				health: "/health",
+				chat: "/ai/chat",
+				sttToken: "/voice/stt-token",
+				tts: "/voice/tts",
+			},
+		});
 	});
 });
