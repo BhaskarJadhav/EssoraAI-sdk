@@ -187,6 +187,8 @@ export default {
         const body = await readJsonBody(request);
         const audioBase64 = body.audioBase64;
         const contentType = body.contentType || "audio/wav";
+        const sampleRateHertz = Number(body.sampleRateHertz || body.sampleRate || 16000);
+        const languageCode = body.languageCode || "en-US";
 
         if (!audioBase64) {
           return jsonResponse(
@@ -199,6 +201,21 @@ export default {
         }
 
         const audioBuffer = base64ToArrayBuffer(audioBase64);
+        const googleSpeechResult = await transcribeGoogleSpeech(
+          audioBase64,
+          sampleRateHertz,
+          languageCode,
+          env
+        );
+
+        if (googleSpeechResult.transcript) {
+          return jsonResponse({
+            success: true,
+            provider: "google",
+            transcript: googleSpeechResult.transcript,
+            result: googleSpeechResult.raw,
+          });
+        }
 
         const deepgramResponse = await fetch(
           "https://api.deepgram.com/v1/listen",
@@ -216,7 +233,9 @@ export default {
 
         return jsonResponse({
           success: true,
+          provider: "deepgram",
           result: deepgramResult,
+          googleError: googleSpeechResult.error,
         });
       }
 
@@ -230,7 +249,11 @@ export default {
         const voiceId = body.voiceId;
         const modelId = body.modelId || "eleven_flash_v2_5";
         const googleLanguageCode = body.googleLanguageCode || "en-US";
-        const googleVoiceName = body.googleVoiceName;
+        const googleVoiceName = body.googleVoiceName || "en-US-Chirp3-HD-Zephyr";
+        const googleSpeakingRate = Number(body.googleSpeakingRate ?? 0.96);
+        const googlePitch = Number(body.googlePitch ?? 0);
+        const googleVolumeGainDb = Number(body.googleVolumeGainDb ?? 0);
+        const googleEffectsProfileId = body.googleEffectsProfileId || "headphone-class-device";
 
         if (!text) {
           return jsonResponse(
@@ -246,6 +269,10 @@ export default {
           text,
           googleLanguageCode,
           googleVoiceName,
+          googleSpeakingRate,
+          googlePitch,
+          googleVolumeGainDb,
+          googleEffectsProfileId,
           env
         );
         if (googleTtsAudio) {
@@ -655,10 +682,110 @@ function buildSentryEnvelopeUrl(dsn: string) {
   return `${parsed.protocol}//${parsed.host}/api/${projectId}/envelope/`;
 }
 
+async function transcribeGoogleSpeech(
+  audioBase64: string,
+  sampleRateHertz: number,
+  languageCode: string,
+  env: Env
+): Promise<{ transcript: string; raw?: unknown; error?: string }> {
+  try {
+    const credentials = JSON.parse(
+      env.GOOGLE_APPLICATION_CREDENTIALS_JSON
+    );
+    const jwt = await createJWT(credentials);
+
+    const tokenResponse = await fetch(
+      "https://oauth2.googleapis.com/token",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+          assertion: jwt,
+        }),
+      }
+    );
+
+    if (!tokenResponse.ok) {
+      return {
+        transcript: "",
+        error: `Google auth failed with ${tokenResponse.status}`,
+      };
+    }
+
+    const tokenData: any = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+
+    const speechResponse = await fetch(
+      "https://speech.googleapis.com/v1/speech:recognize",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          config: {
+            encoding: "LINEAR16",
+            sampleRateHertz,
+            languageCode,
+            model: "latest_short",
+            enableAutomaticPunctuation: true,
+          },
+          audio: {
+            content: audioBase64,
+          },
+        }),
+      }
+    );
+
+    const speechResult = await speechResponse.json() as {
+      results?: Array<{
+        alternatives?: Array<{
+          transcript?: string;
+        }>;
+      }>;
+      error?: {
+        message?: string;
+      };
+    };
+
+    if (!speechResponse.ok) {
+      return {
+        transcript: "",
+        raw: speechResult,
+        error: speechResult.error?.message ?? `Google Speech failed with ${speechResponse.status}`,
+      };
+    }
+
+    const transcript = speechResult.results
+      ?.flatMap((result) => result.alternatives ?? [])
+      .map((alternative) => alternative.transcript ?? "")
+      .join(" ")
+      .trim() ?? "";
+
+    return {
+      transcript,
+      raw: speechResult,
+    };
+  } catch (error) {
+    return {
+      transcript: "",
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function synthesizeGoogleTts(
   text: string,
   languageCode: string,
   voiceName: string | undefined,
+  speakingRate: number,
+  pitch: number,
+  volumeGainDb: number,
+  effectsProfileId: string | undefined,
   env: Env
 ): Promise<ArrayBuffer | null> {
   try {
@@ -704,6 +831,10 @@ async function synthesizeGoogleTts(
           },
           audioConfig: {
             audioEncoding: "MP3",
+            speakingRate,
+            pitch,
+            volumeGainDb,
+            ...(effectsProfileId ? { effectsProfileId: [effectsProfileId] } : {}),
           },
         }),
       }
