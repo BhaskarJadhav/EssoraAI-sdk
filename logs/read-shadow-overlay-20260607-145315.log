@@ -1,0 +1,184 @@
+**********************
+PowerShell transcript start
+Start time: 20260607145315
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$ErrorActionPreference='Stop'
+$repo='C:\Users\jadha\clicky.ai'
+$log=Join-Path $repo ("logs\read-shadow-overlay-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".log")
+Start-Transcript -Path $log -Force | Out-Null
+Set-Location (Join-Path $repo 'clicky-web-sdk')
+Get-Content src\shared\ShadowDom.ts
+Get-Content src\overlay\CursorOverlay.ts
+Get-Content src\overlay\OverlayRoot.ts
+Stop-Transcript | Out-Null
+Write-Output "Logged read to $log"
+Process ID: 16048
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+export type ShadowRootMount = {
+  hostElement: HTMLElement;
+  shadowRoot: ShadowRoot;
+};
+
+export function createShadowRootMount(mountElement: HTMLElement, hostClassName: string): ShadowRootMount {
+  const hostElement = document.createElement("div");
+  hostElement.className = hostClassName;
+  mountElement.appendChild(hostElement);
+  const shadowRoot = hostElement.attachShadow({ mode: "open" });
+
+  return { hostElement, shadowRoot };
+}
+import type { ClickyPointCommand } from "../core/types";
+import { ElementRegistry } from "../context/ElementRegistry";
+import { CursorAnimator } from "./CursorAnimator";
+import { ElementHighlighter } from "./ElementHighlighter";
+import { TargetLock } from "./TargetLock";
+
+export class CursorOverlay {
+  private readonly animator: CursorAnimator;
+  private readonly highlighter: ElementHighlighter;
+  private readonly targetLock: TargetLock;
+  private lockedTargetLabel?: string;
+  private hasStartedFlightToLockedTarget = false;
+
+  constructor(
+    private readonly rootElement: HTMLElement,
+    private readonly elementRegistry: ElementRegistry,
+    private readonly onTargetLost?: (reason: string) => void
+  ) {
+    const cursorElement = document.createElement("div");
+    cursorElement.className = "clicky-cursor";
+    const bubbleElement = document.createElement("div");
+    bubbleElement.className = "clicky-response-bubble";
+    this.rootElement.append(cursorElement, bubbleElement);
+    this.animator = new CursorAnimator(cursorElement, bubbleElement);
+    this.highlighter = new ElementHighlighter(rootElement);
+    this.targetLock = new TargetLock(elementRegistry, {
+      onBoundsChanged: (rect) => this.updateLockedTarget(rect),
+      onTargetLost: (reason) => this.handleTargetLost(reason)
+    });
+  }
+
+  point(command: ClickyPointCommand): boolean {
+    this.targetLock.unlock();
+    this.lockedTargetLabel = undefined;
+    this.hasStartedFlightToLockedTarget = false;
+
+    if (command.type === "none") {
+      return false;
+    }
+
+    if (command.type === "coordinate") {
+      this.highlighter.clear();
+      this.animator.pointAt(command.x, command.y, command.label);
+      return true;
+    }
+
+    const targetElement = this.elementRegistry.getElementById(command.elementId);
+    if (!targetElement) {
+      return false;
+    }
+
+    this.pointAtElement(targetElement, command.label, command.elementId);
+    return true;
+  }
+
+  pointAtElement(targetElement: Element, label?: string, targetElementId?: string): void {
+    this.lockedTargetLabel = label;
+    this.hasStartedFlightToLockedTarget = false;
+    this.targetLock.lock(targetElement, targetElementId);
+  }
+
+  scheduleHide(): void {
+    this.animator.scheduleHide();
+  }
+
+  showTransient(): void {
+    this.animator.showIdle();
+  }
+
+  destroy(): void {
+    this.targetLock.unlock();
+    this.highlighter.destroy();
+  }
+
+  private updateLockedTarget(rect: DOMRect): void {
+    if (this.isRectOutsideViewport(rect)) {
+      this.highlighter.clear();
+      return;
+    }
+
+    this.highlighter.show(rect);
+    const targetCenterX = rect.left + rect.width / 2;
+    const targetCenterY = rect.top + rect.height / 2;
+
+    if (!this.hasStartedFlightToLockedTarget) {
+      this.hasStartedFlightToLockedTarget = true;
+      this.animator.pointAt(targetCenterX, targetCenterY, this.lockedTargetLabel);
+      return;
+    }
+
+    this.animator.updatePointingTarget(targetCenterX, targetCenterY, this.lockedTargetLabel);
+  }
+
+  private handleTargetLost(reason: string): void {
+    this.highlighter.markTargetLost();
+    this.onTargetLost?.(reason);
+  }
+
+  private isRectOutsideViewport(rect: DOMRect): boolean {
+    return (
+      rect.width <= 0 ||
+      rect.height <= 0 ||
+      rect.bottom < 0 ||
+      rect.right < 0 ||
+      rect.top > window.innerHeight ||
+      rect.left > window.innerWidth
+    );
+  }
+}
+import type { NormalizedClickyOptions } from "../core/types";
+import { ElementRegistry } from "../context/ElementRegistry";
+import { createShadowRootMount, type ShadowRootMount } from "../shared/ShadowDom";
+import { CursorOverlay } from "./CursorOverlay";
+import { createOverlayStyles } from "./overlayStyles";
+
+export class OverlayRoot {
+  private readonly mount: ShadowRootMount;
+  readonly cursorOverlay: CursorOverlay;
+
+  constructor(
+    options: NormalizedClickyOptions,
+    elementRegistry: ElementRegistry,
+    onTargetLost?: (reason: string) => void
+  ) {
+    this.mount = createShadowRootMount(options.mountElement, "clicky-overlay-host");
+    const styleElement = document.createElement("style");
+    styleElement.textContent = createOverlayStyles(options);
+    const overlayElement = document.createElement("div");
+    overlayElement.className = "clicky-overlay";
+    this.mount.shadowRoot.append(styleElement, overlayElement);
+    this.cursorOverlay = new CursorOverlay(overlayElement, elementRegistry, onTargetLost);
+  }
+
+  destroy(): void {
+    this.cursorOverlay.destroy();
+    this.mount.hostElement.remove();
+  }
+}
+**********************
+PowerShell transcript end
+End time: 20260607145315
+**********************

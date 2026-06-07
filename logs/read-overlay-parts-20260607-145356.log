@@ -1,0 +1,573 @@
+**********************
+PowerShell transcript start
+Start time: 20260607145356
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$ErrorActionPreference='Stop'
+$repo='C:\Users\jadha\clicky.ai'
+$log=Join-Path $repo ("logs\read-overlay-parts-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".log")
+Start-Transcript -Path $log -Force | Out-Null
+Set-Location (Join-Path $repo 'clicky-web-sdk')
+Get-Content src\overlay\CursorAnimator.ts
+Get-Content src\overlay\ElementHighlighter.ts
+Get-Content src\overlay\TargetLock.ts
+Get-Content src\overlay\overlayStyles.ts
+Stop-Transcript | Out-Null
+Write-Output "Logged read to $log"
+Process ID: 19936
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+export class CursorAnimator {
+  private static readonly transientHideDelayMs = 1000;
+  private static readonly pointingBobDurationMs = 1200;
+  private hideTimeoutId?: number;
+  private flightAnimationFrameId?: number;
+  private pointingBobAnimationFrameId?: number;
+  private currentPosition?: { x: number; y: number };
+  private pointingBasePosition?: { x: number; y: number };
+  private isFlyingToTarget = false;
+  private readonly prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+  constructor(
+    private readonly cursorElement: HTMLElement,
+    private readonly bubbleElement: HTMLElement
+  ) {}
+
+  pointAt(x: number, y: number, label?: string): void {
+    const targetPosition = this.clampPosition(x, y);
+    window.clearTimeout(this.hideTimeoutId);
+    this.stopPointingBob();
+
+    if (this.prefersReducedMotion.matches || !this.currentPosition) {
+      this.setCursorTransform(targetPosition.x, targetPosition.y, -35, 1);
+      this.showBubble(targetPosition.x, targetPosition.y, label);
+      this.startPointingMode(targetPosition, label);
+      return;
+    }
+
+    this.animateBezierFlight(this.currentPosition, targetPosition, () => {
+      this.startPointingMode(targetPosition, label);
+    });
+  }
+
+  showAt(x: number, y: number, label?: string): void {
+    const clampedPosition = this.clampPosition(x, y);
+    this.stopFlight();
+    this.stopPointingBob();
+    this.setCursorTransform(clampedPosition.x, clampedPosition.y, -35, 1);
+    this.showBubble(clampedPosition.x, clampedPosition.y, label);
+  }
+
+  showIdle(): void {
+    const fallbackPosition = this.currentPosition ?? {
+      x: Math.max(28, Math.min(window.innerWidth - 28, 46)),
+      y: Math.max(28, Math.min(window.innerHeight - 28, window.innerHeight - 64))
+    };
+    this.stopFlight();
+    this.stopPointingBob();
+    this.setCursorTransform(fallbackPosition.x, fallbackPosition.y, -35, 1);
+  }
+
+  updatePointingTarget(x: number, y: number, label?: string): void {
+    if (this.isFlyingToTarget) {
+      return;
+    }
+
+    const clampedPosition = this.clampPosition(x, y);
+    this.pointingBasePosition = clampedPosition;
+    this.currentPosition = clampedPosition;
+    this.showBubble(clampedPosition.x, clampedPosition.y, label);
+  }
+
+  isNavigating(): boolean {
+    return this.isFlyingToTarget;
+  }
+
+  hide(): void {
+    window.clearTimeout(this.hideTimeoutId);
+    this.stopFlight();
+    this.stopPointingBob();
+    this.cursorElement.classList.remove("is-visible");
+    this.bubbleElement.classList.remove("is-visible");
+  }
+
+  scheduleHide(): void {
+    window.clearTimeout(this.hideTimeoutId);
+    this.hideTimeoutId = window.setTimeout(() => this.hide(), CursorAnimator.transientHideDelayMs);
+  }
+
+  private animateBezierFlight(
+    startPosition: { x: number; y: number },
+    targetPosition: { x: number; y: number },
+    onComplete: () => void
+  ): void {
+    this.stopFlight();
+    this.isFlyingToTarget = true;
+
+    const deltaX = targetPosition.x - startPosition.x;
+    const deltaY = targetPosition.y - startPosition.y;
+    const distance = Math.hypot(deltaX, deltaY);
+    const durationMs = Math.min(Math.max((distance / 800) * 1000, 600), 1400);
+    const midpoint = {
+      x: (startPosition.x + targetPosition.x) / 2,
+      y: (startPosition.y + targetPosition.y) / 2
+    };
+    const controlPoint = {
+      x: midpoint.x,
+      y: midpoint.y - Math.min(distance * 0.4, 120)
+    };
+    const animationStartedAt = performance.now();
+
+    const animateFrame = (frameStartedAt: number) => {
+      const linearProgress = Math.min((frameStartedAt - animationStartedAt) / durationMs, 1);
+      const easedProgress = this.easeInOut(linearProgress);
+      const oneMinusProgress = 1 - easedProgress;
+      const x =
+        oneMinusProgress * oneMinusProgress * startPosition.x +
+        2 * oneMinusProgress * easedProgress * controlPoint.x +
+        easedProgress * easedProgress * targetPosition.x;
+      const y =
+        oneMinusProgress * oneMinusProgress * startPosition.y +
+        2 * oneMinusProgress * easedProgress * controlPoint.y +
+        easedProgress * easedProgress * targetPosition.y;
+      const tangentX =
+        2 * oneMinusProgress * (controlPoint.x - startPosition.x) +
+        2 * easedProgress * (targetPosition.x - controlPoint.x);
+      const tangentY =
+        2 * oneMinusProgress * (controlPoint.y - startPosition.y) +
+        2 * easedProgress * (targetPosition.y - controlPoint.y);
+      const rotationDegrees = (Math.atan2(tangentY, tangentX) * 180) / Math.PI + 90;
+      const scale = 1 + Math.sin(linearProgress * Math.PI) * 0.4;
+
+      this.setCursorTransform(x, y, rotationDegrees, scale);
+      this.showBubble(x, y, this.bubbleElement.textContent || undefined);
+
+      if (linearProgress < 1) {
+        this.flightAnimationFrameId = window.requestAnimationFrame(animateFrame);
+        return;
+      }
+
+      this.flightAnimationFrameId = undefined;
+      this.isFlyingToTarget = false;
+      this.setCursorTransform(targetPosition.x, targetPosition.y, -35, 1);
+      onComplete();
+    };
+
+    this.flightAnimationFrameId = window.requestAnimationFrame(animateFrame);
+  }
+
+  private startPointingMode(position: { x: number; y: number }, label?: string): void {
+    this.pointingBasePosition = position;
+    this.currentPosition = position;
+    this.showBubble(position.x, position.y, label);
+
+    const pointingStartedAt = performance.now();
+    const animatePointingBob = (frameStartedAt: number) => {
+      if (!this.pointingBasePosition) {
+        this.pointingBobAnimationFrameId = undefined;
+        return;
+      }
+
+      const phase = ((frameStartedAt - pointingStartedAt) / CursorAnimator.pointingBobDurationMs) * Math.PI * 2;
+      const bobOffsetY = Math.sin(phase) * 4;
+      this.setCursorTransform(this.pointingBasePosition.x, this.pointingBasePosition.y + bobOffsetY, -35, 1);
+      this.showBubble(this.pointingBasePosition.x, this.pointingBasePosition.y + bobOffsetY, label);
+      this.pointingBobAnimationFrameId = window.requestAnimationFrame(animatePointingBob);
+    };
+
+    this.pointingBobAnimationFrameId = window.requestAnimationFrame(animatePointingBob);
+  }
+
+  private setCursorTransform(x: number, y: number, rotationDegrees: number, scale: number): void {
+    this.currentPosition = { x, y };
+    this.cursorElement.style.transform = `translate3d(${x}px, ${y}px, 0) rotate(${rotationDegrees}deg) scale(${scale})`;
+    this.cursorElement.classList.add("is-visible");
+  }
+
+  private showBubble(x: number, y: number, label?: string): void {
+    if (!label) {
+      return;
+    }
+
+    this.bubbleElement.textContent = label;
+    this.bubbleElement.style.transform = `translate3d(${Math.min(x + 22, window.innerWidth - 380)}px, ${Math.min(
+      y + 18,
+      window.innerHeight - 80
+    )}px, 0)`;
+    this.bubbleElement.classList.add("is-visible");
+  }
+
+  private clampPosition(x: number, y: number): { x: number; y: number } {
+    return {
+      x: Math.max(16, Math.min(window.innerWidth - 16, x)),
+      y: Math.max(16, Math.min(window.innerHeight - 16, y))
+    };
+  }
+
+  private easeInOut(progress: number): number {
+    return progress * progress * (3 - 2 * progress);
+  }
+
+  private stopFlight(): void {
+    if (this.flightAnimationFrameId !== undefined) {
+      window.cancelAnimationFrame(this.flightAnimationFrameId);
+      this.flightAnimationFrameId = undefined;
+    }
+    this.isFlyingToTarget = false;
+  }
+
+  private stopPointingBob(): void {
+    if (this.pointingBobAnimationFrameId !== undefined) {
+      window.cancelAnimationFrame(this.pointingBobAnimationFrameId);
+      this.pointingBobAnimationFrameId = undefined;
+    }
+    this.pointingBasePosition = undefined;
+  }
+}
+export class ElementHighlighter {
+  private readonly highlightElement: HTMLElement;
+  private readonly pulseElement: HTMLElement;
+
+  constructor(private readonly rootElement: HTMLElement) {
+    this.highlightElement = document.createElement("div");
+    this.highlightElement.className = "clicky-element-highlight";
+    this.pulseElement = document.createElement("div");
+    this.pulseElement.className = "clicky-element-pulse";
+    this.rootElement.append(this.highlightElement, this.pulseElement);
+  }
+
+  show(rect: DOMRect): void {
+    this.applyRect(this.highlightElement, rect, 0);
+    this.applyRect(this.pulseElement, rect, 6);
+    this.highlightElement.classList.remove("is-lost");
+    this.pulseElement.classList.remove("is-lost");
+    this.highlightElement.classList.add("is-visible");
+    this.pulseElement.classList.add("is-visible");
+  }
+
+  markTargetLost(): void {
+    this.highlightElement.classList.add("is-lost", "is-visible");
+    this.pulseElement.classList.remove("is-visible");
+  }
+
+  clear(): void {
+    this.highlightElement.classList.remove("is-visible");
+    this.pulseElement.classList.remove("is-visible");
+    this.highlightElement.classList.remove("is-lost");
+    this.pulseElement.classList.remove("is-lost");
+  }
+
+  destroy(): void {
+    this.highlightElement.remove();
+    this.pulseElement.remove();
+  }
+
+  private applyRect(element: HTMLElement, rect: DOMRect, outset: number): void {
+    element.style.transform = `translate3d(${Math.round(rect.left - outset)}px, ${Math.round(rect.top - outset)}px, 0)`;
+    element.style.width = `${Math.round(rect.width + outset * 2)}px`;
+    element.style.height = `${Math.round(rect.height + outset * 2)}px`;
+    element.style.borderRadius = `${Math.min(12, Math.max(6, Math.round(Math.min(rect.width, rect.height) / 8)))}px`;
+  }
+}
+import { ElementRegistry } from "../context/ElementRegistry";
+
+export type TargetLockCallbacks = {
+  onBoundsChanged(rect: DOMRect): void;
+  onTargetLost(reason: string): void;
+};
+
+export class TargetLock {
+  private targetElement?: Element;
+  private targetElementId?: string;
+  private resizeObserver?: ResizeObserver;
+  private intersectionObserver?: IntersectionObserver;
+  private cleanupCallbacks: Array<() => void> = [];
+  private routeRecoveryTimeoutId?: number;
+  private originalPushState?: History["pushState"];
+  private originalReplaceState?: History["replaceState"];
+
+  constructor(
+    private readonly elementRegistry: ElementRegistry,
+    private readonly callbacks: TargetLockCallbacks
+  ) {}
+
+  lock(targetElement: Element, targetElementId?: string): void {
+    this.unlock();
+    this.targetElement = targetElement;
+    this.targetElementId = targetElementId;
+    this.installResizeObserver(targetElement);
+    this.installIntersectionObserver(targetElement);
+    this.installScrollListeners(targetElement);
+    this.installRouteListeners();
+    this.emitCurrentBounds();
+  }
+
+  unlock(): void {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = undefined;
+    this.intersectionObserver?.disconnect();
+    this.intersectionObserver = undefined;
+    for (const cleanupCallback of this.cleanupCallbacks.splice(0)) {
+      cleanupCallback();
+    }
+    window.clearTimeout(this.routeRecoveryTimeoutId);
+    this.routeRecoveryTimeoutId = undefined;
+    this.restoreHistoryMethods();
+    this.targetElement = undefined;
+    this.targetElementId = undefined;
+  }
+
+  isLocked(): boolean {
+    return !!this.targetElement?.isConnected;
+  }
+
+  currentRect(): DOMRect | undefined {
+    if (!this.targetElement?.isConnected) {
+      return undefined;
+    }
+
+    return this.targetElement.getBoundingClientRect();
+  }
+
+  private installResizeObserver(targetElement: Element): void {
+    if (!("ResizeObserver" in window)) {
+      return;
+    }
+
+    this.resizeObserver = new ResizeObserver(() => this.emitCurrentBounds());
+    this.resizeObserver.observe(targetElement);
+  }
+
+  private installIntersectionObserver(targetElement: Element): void {
+    if (!("IntersectionObserver" in window)) {
+      return;
+    }
+
+    this.intersectionObserver = new IntersectionObserver((entries) => {
+      const targetEntry = entries[0];
+      if (!targetEntry?.isIntersecting) {
+        this.callbacks.onTargetLost("target outside viewport");
+      }
+    });
+    this.intersectionObserver.observe(targetElement);
+  }
+
+  private installScrollListeners(targetElement: Element): void {
+    const scrollHandler = () => this.emitCurrentBounds();
+    window.addEventListener("scroll", scrollHandler, { capture: true, passive: true });
+    this.cleanupCallbacks.push(() => window.removeEventListener("scroll", scrollHandler, { capture: true }));
+
+    for (const scrollableAncestor of this.findScrollableAncestors(targetElement)) {
+      scrollableAncestor.addEventListener("scroll", scrollHandler, { passive: true });
+      this.cleanupCallbacks.push(() => scrollableAncestor.removeEventListener("scroll", scrollHandler));
+    }
+
+    const resizeHandler = () => this.emitCurrentBounds();
+    window.addEventListener("resize", resizeHandler);
+    this.cleanupCallbacks.push(() => window.removeEventListener("resize", resizeHandler));
+  }
+
+  private installRouteListeners(): void {
+    const routeHandler = () => this.recoverAfterRouteChange();
+    window.addEventListener("popstate", routeHandler);
+    this.cleanupCallbacks.push(() => window.removeEventListener("popstate", routeHandler));
+
+    this.originalPushState = history.pushState;
+    this.originalReplaceState = history.replaceState;
+
+    history.pushState = ((...args: Parameters<History["pushState"]>) => {
+      this.originalPushState?.apply(history, args);
+      routeHandler();
+    }) as History["pushState"];
+
+    history.replaceState = ((...args: Parameters<History["replaceState"]>) => {
+      this.originalReplaceState?.apply(history, args);
+      routeHandler();
+    }) as History["replaceState"];
+  }
+
+  private restoreHistoryMethods(): void {
+    if (this.originalPushState) {
+      history.pushState = this.originalPushState;
+      this.originalPushState = undefined;
+    }
+    if (this.originalReplaceState) {
+      history.replaceState = this.originalReplaceState;
+      this.originalReplaceState = undefined;
+    }
+  }
+
+  private recoverAfterRouteChange(): void {
+    if (!this.targetElementId) {
+      this.callbacks.onTargetLost("route changed");
+      return;
+    }
+
+    const recoveryStartedAt = performance.now();
+    const tryRecoverTarget = () => {
+      const recoveredElement = this.elementRegistry.getElementById(this.targetElementId!);
+      if (recoveredElement?.isConnected) {
+        this.lock(recoveredElement, this.targetElementId);
+        return;
+      }
+
+      if (performance.now() - recoveryStartedAt >= 2000) {
+        this.callbacks.onTargetLost("target missing after route change");
+        return;
+      }
+
+      this.routeRecoveryTimeoutId = window.setTimeout(tryRecoverTarget, 100);
+    };
+
+    tryRecoverTarget();
+  }
+
+  private emitCurrentBounds(): void {
+    const rect = this.currentRect();
+    if (!rect) {
+      this.callbacks.onTargetLost("target disconnected");
+      return;
+    }
+
+    this.callbacks.onBoundsChanged(rect);
+  }
+
+  private findScrollableAncestors(targetElement: Element): Element[] {
+    const scrollableAncestors: Element[] = [];
+    let currentElement = targetElement.parentElement;
+
+    while (currentElement && currentElement !== document.body) {
+      const computedStyle = window.getComputedStyle(currentElement);
+      const overflowValue = `${computedStyle.overflow} ${computedStyle.overflowX} ${computedStyle.overflowY}`;
+      if (/(auto|scroll|overlay)/.test(overflowValue)) {
+        scrollableAncestors.push(currentElement);
+      }
+      currentElement = currentElement.parentElement;
+    }
+
+    return scrollableAncestors;
+  }
+}
+import type { NormalizedClickyOptions } from "../core/types";
+import { createDesignSystemCss } from "../shared/DesignSystem";
+
+export function createOverlayStyles(options: NormalizedClickyOptions): string {
+  return `
+    ${createDesignSystemCss(options)}
+
+    .clicky-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: var(--clicky-z-index);
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .clicky-cursor {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      transform: translate3d(-100px, -100px, 0) rotate(45deg);
+      border-radius: 5px 5px 5px 1px;
+      background: var(--clicky-accent);
+      box-shadow: 0 0 0 5px color-mix(in srgb, var(--clicky-accent) 18%, transparent),
+        0 8px 24px color-mix(in srgb, var(--clicky-accent) 44%, transparent);
+      opacity: 0;
+      transition: opacity 300ms ease;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    .clicky-cursor.is-visible {
+      opacity: 1;
+    }
+
+    .clicky-response-bubble {
+      position: absolute;
+      max-width: min(360px, calc(100vw - 32px));
+      transform: translate3d(-100px, -100px, 0);
+      padding: 10px 12px;
+      border: 1px solid var(--clicky-border);
+      border-radius: var(--clicky-radius);
+      background: rgba(16, 21, 31, 0.94);
+      color: var(--clicky-text);
+      box-shadow: var(--clicky-shadow);
+      opacity: 0;
+      transition: opacity 180ms ease;
+      line-height: 1.35;
+      font-size: 13px;
+    }
+
+    .clicky-response-bubble.is-visible {
+      opacity: 1;
+    }
+
+    .clicky-element-highlight,
+    .clicky-element-pulse {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 0;
+      height: 0;
+      opacity: 0;
+      pointer-events: none;
+      box-sizing: border-box;
+      will-change: transform, width, height, opacity;
+    }
+
+    .clicky-element-highlight {
+      border: 2px solid var(--clicky-accent);
+      background: color-mix(in srgb, var(--clicky-accent) 7%, transparent);
+      box-shadow:
+        0 0 0 4px color-mix(in srgb, var(--clicky-accent) 16%, transparent),
+        0 10px 34px color-mix(in srgb, var(--clicky-accent) 30%, transparent),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.46);
+      transition: opacity 120ms ease;
+    }
+
+    .clicky-element-pulse {
+      border: 1px solid color-mix(in srgb, var(--clicky-accent) 70%, transparent);
+      animation: clicky-target-pulse 1100ms ease-out infinite;
+    }
+
+    .clicky-element-highlight.is-visible,
+    .clicky-element-pulse.is-visible {
+      opacity: 1;
+    }
+
+    .clicky-element-highlight.is-lost {
+      border-style: dashed;
+      opacity: 0.72;
+      background: color-mix(in srgb, var(--clicky-accent) 4%, transparent);
+      box-shadow:
+        0 0 0 3px color-mix(in srgb, var(--clicky-accent) 10%, transparent),
+        0 8px 24px color-mix(in srgb, var(--clicky-accent) 18%, transparent);
+    }
+
+    @keyframes clicky-target-pulse {
+      0% {
+        opacity: 0.55;
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--clicky-accent) 26%, transparent);
+      }
+      100% {
+        opacity: 0;
+        box-shadow: 0 0 0 12px color-mix(in srgb, var(--clicky-accent) 0%, transparent);
+      }
+    }
+  `;
+}
+**********************
+PowerShell transcript end
+End time: 20260607145356
+**********************

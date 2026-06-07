@@ -1,0 +1,110 @@
+**********************
+PowerShell transcript start
+Start time: 20260528014104
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$logPath = Join-Path 'C:\Users\jadha\clicky.ai\logs' "$timestamp-find-bootstrap.log"
+Start-Transcript -Path $logPath -Force | Out-Null
+Select-String -Path src\core\ClickyClient.ts -Pattern "bootstrapRuntime|createEmptyTranscriptionMessage" -Context 3,15
+Stop-Transcript | Out-Null
+Get-Content $logPath
+Process ID: 18380
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+
+  src\core\ClickyClient.ts:124:    this.lifecycle.add(() => this.micCapture.stop());
+  src\core\ClickyClient.ts:125:    this.lifecycle.add(() => this.audioPlayer.destroy());
+  src\core\ClickyClient.ts:126:    this.micCapture.onAudioLevel((level) =>
+this.panelRoot.companionPanel.setMicLevel(level));
+> src\core\ClickyClient.ts:127:    void this.bootstrapRuntime();
+  src\core\ClickyClient.ts:128:  }
+  src\core\ClickyClient.ts:129:
+  src\core\ClickyClient.ts:130:  open(): void {
+  src\core\ClickyClient.ts:131:    this.panelRoot.open();
+  src\core\ClickyClient.ts:132:  }
+  src\core\ClickyClient.ts:133:
+  src\core\ClickyClient.ts:134:  close(): void {
+  src\core\ClickyClient.ts:135:    this.panelRoot.close();
+  src\core\ClickyClient.ts:136:  }
+  src\core\ClickyClient.ts:137:
+  src\core\ClickyClient.ts:138:  async destroy(): Promise<void> {
+  src\core\ClickyClient.ts:139:    await this.lifecycle.destroy();
+  src\core\ClickyClient.ts:140:  }
+  src\core\ClickyClient.ts:141:
+  src\core\ClickyClient.ts:142:  async startPushToTalk(): Promise<void> {
+  src\core\ClickyClient.ts:215:      this.endTask("error");
+  src\core\ClickyClient.ts:216:      this.panelRoot.companionPanel.appendMessage(
+  src\core\ClickyClient.ts:217:        "assistant",
+> src\core\ClickyClient.ts:218:        this.createEmptyTranscriptionMessage()
+  src\core\ClickyClient.ts:219:      );
+  src\core\ClickyClient.ts:220:    }
+  src\core\ClickyClient.ts:221:  }
+  src\core\ClickyClient.ts:222:
+  src\core\ClickyClient.ts:223:  private handleMicAudioFrame(voiceSessionId: string, pcm16Frame: Int16Array): void {
+  src\core\ClickyClient.ts:224:    if (this.activeVoiceSessionId !== voiceSessionId) {
+  src\core\ClickyClient.ts:225:      return;
+  src\core\ClickyClient.ts:226:    }
+  src\core\ClickyClient.ts:227:
+  src\core\ClickyClient.ts:228:    if (!this.firstAudioFrameAt) {
+  src\core\ClickyClient.ts:229:      this.firstAudioFrameAt = performance.now();
+  src\core\ClickyClient.ts:230:      this.logStage("mic.audio.first_frame", {
+  src\core\ClickyClient.ts:231:        latencyMs: this.micStartedAt ? Math.round(this.firstAudioFrameAt - 
+this.micStartedAt) : undefined
+  src\core\ClickyClient.ts:232:      });
+  src\core\ClickyClient.ts:233:    }
+  src\core\ClickyClient.ts:289:    return Number((this.audioLevelTotal / this.audioFrameCount).toFixed(4));
+  src\core\ClickyClient.ts:290:  }
+  src\core\ClickyClient.ts:291:
+> src\core\ClickyClient.ts:292:  private createEmptyTranscriptionMessage(): string {
+  src\core\ClickyClient.ts:293:    if (this.audioLevelPeak < 0.006 || this.voiceLikeAudioFrameCount === 0) {
+  src\core\ClickyClient.ts:294:      return "The microphone opened, but the captured audio looks silent. Check the 
+Windows input device and Chrome microphone source, then speak while holding the Mic button.";
+  src\core\ClickyClient.ts:295:    }
+  src\core\ClickyClient.ts:296:
+  src\core\ClickyClient.ts:297:    return "I received non-silent microphone audio, but speech transcription still 
+returned empty text. Try once more; if this repeats, we need to inspect the captured WAV.";
+  src\core\ClickyClient.ts:298:  }
+  src\core\ClickyClient.ts:299:
+  src\core\ClickyClient.ts:300:  async sendUserText(text: string): Promise<void> {
+  src\core\ClickyClient.ts:301:    await this.startTask({ inputMode: "text", initialText: text });
+  src\core\ClickyClient.ts:302:  }
+  src\core\ClickyClient.ts:303:
+  src\core\ClickyClient.ts:304:  async healthCheck(): Promise<ClickyHealthReport> {
+  src\core\ClickyClient.ts:305:    const health = await this.healthClient.check();
+  src\core\ClickyClient.ts:306:    this.latestHealth = health;
+  src\core\ClickyClient.ts:307:    this.eventBus.emit("health:changed", { health });
+  src\core\ClickyClient.ts:583:    this.endTask("cancelled");
+  src\core\ClickyClient.ts:584:  }
+  src\core\ClickyClient.ts:585:
+> src\core\ClickyClient.ts:586:  private async bootstrapRuntime(): Promise<void> {
+  src\core\ClickyClient.ts:587:    await this.healthCheck();
+  src\core\ClickyClient.ts:588:    await this.loadMemory();
+  src\core\ClickyClient.ts:589:  }
+  src\core\ClickyClient.ts:590:
+  src\core\ClickyClient.ts:591:  private async handleDomChanged(): Promise<void> {
+  src\core\ClickyClient.ts:592:    const semanticMapVersion = this.contextCollector.markDomChanged();
+  src\core\ClickyClient.ts:593:    this.eventBus.emit("dom:changed", { semanticMapVersion });
+  src\core\ClickyClient.ts:594:
+  src\core\ClickyClient.ts:595:    if (!this.activeTaskId) {
+  src\core\ClickyClient.ts:596:      return;
+  src\core\ClickyClient.ts:597:    }
+  src\core\ClickyClient.ts:598:
+  src\core\ClickyClient.ts:599:    const context = await this.contextCollector.capture();
+  src\core\ClickyClient.ts:600:    await this.applySemanticProviders(context);
+  src\core\ClickyClient.ts:601:    this.eventBus.emit("semantic-map:updated", { context });
+**********************
+PowerShell transcript end
+End time: 20260528014104
+**********************

@@ -1,0 +1,312 @@
+**********************
+PowerShell transcript start
+Start time: 20260528013911
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$logPath = Join-Path 'C:\Users\jadha\clicky.ai\logs' "$timestamp-read-panel-files.log"
+Start-Transcript -Path $logPath -Force | Out-Null
+Get-Content -Path src\panel\PanelRoot.ts
+Get-Content -Path src\panel\PanelStyles.ts
+Get-Content -Path src\audio\MicCapture.ts
+Stop-Transcript | Out-Null
+Get-Content $logPath
+Process ID: 23760
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+import { EventBus } from "../core/EventBus";
+import type { NormalizedClickyOptions } from "../core/types";
+import { createShadowRootMount, type ShadowRootMount } from "../shared/ShadowDom";
+import { CompanionPanel, type CompanionPanelHandlers } from "./CompanionPanel";
+import { createLauncherButton } from "./LauncherButton";
+import { createPanelStyles } from "./panelStyles";
+
+export class PanelRoot {
+  private readonly mount: ShadowRootMount;
+  private readonly rootElement: HTMLElement;
+  private readonly launcherButton: HTMLButtonElement;
+  readonly companionPanel: CompanionPanel;
+  private isOpen = false;
+
+  constructor(
+    options: NormalizedClickyOptions,
+    eventBus: EventBus,
+    handlers: CompanionPanelHandlers
+  ) {
+    this.mount = createShadowRootMount(options.mountElement, "clicky-panel-host");
+    const styleElement = document.createElement("style");
+    styleElement.textContent = createPanelStyles(options);
+    this.rootElement = document.createElement("div");
+    this.rootElement.className = "clicky-panel-root";
+    this.launcherButton = createLauncherButton();
+    this.companionPanel = new CompanionPanel(handlers);
+    this.rootElement.append(this.companionPanel.element, this.launcherButton);
+    this.mount.shadowRoot.append(styleElement, this.rootElement);
+
+    this.launcherButton.addEventListener("click", () => {
+      this.setOpen(!this.isOpen);
+    });
+
+    eventBus.on("state:changed", ({ nextState }) => this.companionPanel.setState(nextState));
+    eventBus.on("assistant:token", ({ fullText }) => this.companionPanel.updateStreamingAssistantMessage(fullText));
+    eventBus.on("assistant:done", ({ spokenText }) => this.companionPanel.finishStreamingAssistantMessage(spokenText));
+    eventBus.on("action:proposed", ({ action }) => this.companionPanel.showActionConfirmation(action.definition.name));
+    eventBus.on("action:executed", ({ result }) => {
+      this.companionPanel.hideActionConfirmation();
+      this.companionPanel.appendMessage("assistant", result.message ?? (result.ok ? "Done." : "Action failed."));
+    });
+    eventBus.on("action:failed", ({ error }) => {
+      this.companionPanel.hideActionConfirmation();
+      this.companionPanel.appendMessage("assistant", error.message);
+    });
+  }
+
+  open(): void {
+    this.setOpen(true);
+  }
+
+  close(): void {
+    this.setOpen(false);
+  }
+
+  destroy(): void {
+    this.mount.hostElement.remove();
+  }
+
+  private setOpen(isOpen: boolean): void {
+    this.isOpen = isOpen;
+    this.companionPanel.setOpen(isOpen);
+  }
+}
+import type { NormalizedClickyOptions } from "../core/types";
+import { createDesignSystemCss } from "../shared/DesignSystem";
+
+export function createPanelStyles(options: NormalizedClickyOptions): string {
+  return `
+    ${createDesignSystemCss(options)}
+
+    .clicky-panel-root {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: calc(var(--clicky-z-index) + 1);
+      color: var(--clicky-text);
+    }
+
+    .clicky-launcher {
+      width: 46px;
+      height: 46px;
+      border: 1px solid var(--clicky-border);
+      border-radius: 50%;
+      background: var(--clicky-accent);
+      color: white;
+      box-shadow: var(--clicky-shadow);
+      font-weight: 800;
+    }
+
+    .clicky-panel {
+      display: none;
+      width: min(380px, calc(100vw - 40px));
+      margin-bottom: 12px;
+      border: 1px solid var(--clicky-border);
+      border-radius: var(--clicky-radius);
+      background: var(--clicky-panel-bg);
+      box-shadow: var(--clicky-shadow);
+      overflow: hidden;
+    }
+
+    .clicky-panel.is-open {
+      display: block;
+    }
+
+    .clicky-panel-header,
+    .clicky-panel-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px;
+      border-bottom: 1px solid var(--clicky-border);
+    }
+
+    .clicky-panel-footer {
+      border-top: 1px solid var(--clicky-border);
+      border-bottom: 0;
+    }
+
+    .clicky-title {
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .clicky-state {
+      color: var(--clicky-muted);
+      font-size: 12px;
+    }
+
+    .clicky-thread {
+      max-height: 260px;
+      overflow: auto;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .clicky-message {
+      margin: 0 0 10px;
+      white-space: pre-wrap;
+    }
+
+    .clicky-message-user {
+      color: rgba(248, 251, 255, 0.78);
+    }
+
+    .clicky-message-assistant {
+      color: var(--clicky-text);
+    }
+
+    .clicky-input-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .clicky-input {
+      min-width: 0;
+      border: 1px solid var(--clicky-border);
+      border-radius: var(--clicky-radius);
+      padding: 9px 10px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--clicky-text);
+    }
+
+    .clicky-button {
+      border: 1px solid var(--clicky-border);
+      border-radius: var(--clicky-radius);
+      padding: 9px 10px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--clicky-text);
+    }
+
+    .clicky-button:hover,
+    .clicky-launcher:hover {
+      filter: brightness(1.08);
+    }
+
+    .clicky-mic.is-listening {
+      background: var(--clicky-accent);
+    }
+
+    .clicky-confirm {
+      display: none;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 12px;
+      border-top: 1px solid var(--clicky-border);
+      background: rgba(255, 255, 255, 0.05);
+      font-size: 12px;
+    }
+
+    .clicky-confirm.is-visible {
+      display: flex;
+    }
+  `;
+}
+import { floatToPcm16 } from "./PcmEncoder";
+import { Logger } from "../utils/logger";
+
+export type AudioFrameHandler = (pcm16Frame: Int16Array) => void;
+export type AudioLevelHandler = (level: number) => void;
+
+export class MicCapture {
+  private stream?: MediaStream;
+  private audioContext?: AudioContext;
+  private processor?: ScriptProcessorNode;
+  private source?: MediaStreamAudioSourceNode;
+  private audioFrameHandler?: AudioFrameHandler;
+  private audioLevelHandler?: AudioLevelHandler;
+  private readonly logger = new Logger("ClickyMic", "info");
+
+  onAudioFrame(handler: AudioFrameHandler): void {
+    this.audioFrameHandler = handler;
+  }
+
+  onAudioLevel(handler: AudioLevelHandler): void {
+    this.audioLevelHandler = handler;
+  }
+
+  async start(): Promise<number> {
+    this.logger.info("mic.permission.requested");
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
+    this.logger.info("mic.permission.granted");
+
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    this.audioContext = new AudioContextConstructor({ sampleRate: 16000 });
+    this.source = this.audioContext.createMediaStreamSource(this.stream);
+
+    // ScriptProcessor remains the broadest baseline. The separate worklet file is
+    // provided for browsers/hosts that want to swap in AudioWorklet later.
+    this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+    this.processor.onaudioprocess = (event) => {
+      const channelData = event.inputBuffer.getChannelData(0);
+      this.audioLevelHandler?.(this.calculateLevel(channelData));
+      this.audioFrameHandler?.(floatToPcm16(channelData));
+    };
+
+    this.source.connect(this.processor);
+    this.processor.connect(this.audioContext.destination);
+    this.logger.info("mic.capture.started", { sampleRate: this.audioContext.sampleRate });
+    return this.audioContext.sampleRate;
+  }
+
+  stop(): void {
+    this.logger.info("mic.capture.stopping");
+    this.processor?.disconnect();
+    this.source?.disconnect();
+
+    for (const track of this.stream?.getTracks() ?? []) {
+      track.stop();
+    }
+
+    if (this.audioContext && this.audioContext.state !== "closed") {
+      void this.audioContext.close();
+    }
+
+    this.processor = undefined;
+    this.source = undefined;
+    this.stream = undefined;
+    this.audioContext = undefined;
+    this.logger.info("mic.capture.stopped");
+  }
+
+  private calculateLevel(samples: Float32Array): number {
+    let total = 0;
+    for (const sample of samples) {
+      total += sample * sample;
+    }
+    return Math.min(1, Math.sqrt(total / samples.length) * 5);
+  }
+}
+**********************
+PowerShell transcript end
+End time: 20260528013911
+**********************

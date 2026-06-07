@@ -1,0 +1,54 @@
+**********************
+PowerShell transcript start
+Start time: 20260607152736
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$ErrorActionPreference='Stop'
+$repo='C:\Users\jadha\clicky.ai'
+$log=Join-Path $repo ("logs\inspect-explicit-resize-event-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".log")
+Start-Transcript -Path $log -Force | Out-Null
+Set-Location (Join-Path $repo 'clicky-web-sdk')
+@'
+const { chromium } = require('playwright');
+(async () => {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  await page.goto('http://127.0.0.1:5173/demo/?tts=0');
+  await page.waitForFunction(() => !!window.__clickyTest);
+  await page.route('**/ai/chat', route => route.abort('failed'));
+  const eventPromise = page.waitForFunction(() => window.__clickyTest.events.some(e => e.eventName === 'cursor:pointing'), null, { timeout: 10000 });
+  await page.evaluate(() => { void window.__clicky.sendUserText('find the create invoice button'); });
+  await eventPromise;
+  const id = await page.evaluate(() => window.__clickyTest.events.find(e => e.eventName === 'cursor:pointing').payload.command.elementId);
+  await page.setViewportSize({ width: 800, height: 600 });
+  await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+  await page.waitForTimeout(200);
+  const data = await page.evaluate((id) => {
+    const h = document.querySelector('.clicky-overlay-host').shadowRoot.querySelector('.clicky-element-highlight').getBoundingClientRect();
+    const t = document.querySelector(`[data-clicky-id="${CSS.escape(id)}"]`).getBoundingClientRect();
+    return { h: { left: h.left, top: h.top }, t: { left: t.left, top: t.top } };
+  }, id);
+  console.log(JSON.stringify(data, null, 2));
+  await browser.close();
+})();
+'@ | node
+Stop-Transcript | Out-Null
+Write-Output "Logged explicit resize inspection to $log"
+Process ID: 2932
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+**********************
+PowerShell transcript end
+End time: 20260607152737
+**********************

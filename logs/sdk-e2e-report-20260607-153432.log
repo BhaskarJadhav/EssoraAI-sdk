@@ -1,0 +1,130 @@
+**********************
+PowerShell transcript start
+Start time: 20260607153432
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$ErrorActionPreference='Stop'
+$repo='C:\Users\jadha\clicky.ai'
+$log=Join-Path $repo ("logs\sdk-e2e-report-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".log")
+Start-Transcript -Path $log -Force | Out-Null
+Set-Location (Join-Path $repo 'clicky-web-sdk')
+npm run test:e2e:report
+Get-Content e2e\EVAL_REPORT.md
+Stop-Transcript | Out-Null
+Write-Output "Logged report generation to $log"
+Process ID: 1872
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+
+# Essora Web SDK Browser Evaluation
+
+Generated: 2026-06-07T10:04:33.305Z
+
+## Animation quality
+- Cursor flight: fail
+- Arrival bob: fail
+- Reduced-motion skip: fail
+- Fade after inactivity: fail
+
+## Target lock accuracy
+- Max observed drift during scroll (px): asserted < 4px by `highlight follows element on scroll`
+- Max observed drift during resize (px): asserted < 4px by `highlight survives resize`
+- Route re-lock: fail
+- target-lost event: fail
+
+## Semantic graph
+- Element count on demo page: validated by `graph contains interactive elements`
+- stableId consistency: fail
+- Redaction: fail
+- 120-node cap: fail
+
+## Guide mode
+- Steps generated per goal (count): skipped
+- Step advance on stepCompleted: skipped
+- Recovery after timeout: skipped
+- Cancel stops loop: skipped
+
+## Voice
+- mic:level events per second (rate): asserted by `mic:level event fires during recording`
+- Silent detection latency (ms): asserted >= 3000ms by `mic:silent fires`
+- Permission denied handling: fail
+
+## Onboarding
+- First-run auto-show: fail
+- All checks complete: fail
+- Dismiss persistence: fail
+
+## Screenshot vision
+- Capture success: skipped
+- Attaches to request: skipped
+- Off by default: fail
+- Graceful denial: fail
+
+## Overall
+- Total tests: 28
+- Passed: 0
+- Failed: 0
+- Skipped: 7
+- Known CI limitations:
+  - Live Guide Mode and multi-step model evaluation require RUN_LIVE_AI_E2E=1.
+  - Browser display-capture success/attachment checks require RUN_DISPLAY_CAPTURE_E2E=1.
+  - Voice validation uses Chromium fake media and does not measure physical microphone quality.
+
+## Failed Tests
+- 01-cursor-animation.spec.ts: cursor animation cursor flies to target and lands near the target center
+  - no error message
+- 01-cursor-animation.spec.ts: cursor animation cursor fades after transient inactivity
+  - no error message
+- 01-cursor-animation.spec.ts: cursor animation reduced motion reaches target without a visible flight delay
+  - no error message
+- 01-cursor-animation.spec.ts: cursor animation cursor has an arrival bob while pointing
+  - no error message
+- 02-target-lock.spec.ts: target lock highlight follows element on scroll with under 4px drift
+  - no error message
+- 02-target-lock.spec.ts: target lock highlight survives resize with under 4px drift
+  - no error message
+- 02-target-lock.spec.ts: target lock route change keeps lock when the target still exists
+  - no error message
+- 02-target-lock.spec.ts: target lock target-lost event fires on element removal
+  - no error message
+- 03-semantic-graph.spec.ts: semantic graph graph contains interactive elements with required fields
+  - no error message
+- 03-semantic-graph.spec.ts: semantic graph stableId is deterministic across unchanged captures
+  - no error message
+- 03-semantic-graph.spec.ts: semantic graph password fields are redacted from semantic graph
+  - no error message
+- 03-semantic-graph.spec.ts: semantic graph semantic graph is capped at 120 nodes
+  - no error message
+- 05-voice-waveform.spec.ts: voice waveform mic:level event fires during recording
+  - no error message
+- 05-voice-waveform.spec.ts: voice waveform mic:silent fires after sustained silent input
+  - no error message
+- 05-voice-waveform.spec.ts: voice waveform permission denied state is emitted
+  - no error message
+- 06-onboarding.spec.ts: onboarding onboarding shows on first load
+  - no error message
+- 06-onboarding.spec.ts: onboarding checklist items complete or fail without hanging
+  - no error message
+- 06-onboarding.spec.ts: onboarding dismiss persists across reload
+  - no error message
+- 06-onboarding.spec.ts: onboarding showOnboarding reopens dismissed onboarding
+  - no error message
+- 07-screenshot-vision.spec.ts: screenshot vision screenshot is off by default
+  - no error message
+- 07-screenshot-vision.spec.ts: screenshot vision denied capture degrades gracefully
+  - no error message
+**********************
+PowerShell transcript end
+End time: 20260607153433
+**********************

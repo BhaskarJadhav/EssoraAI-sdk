@@ -1,0 +1,1207 @@
+**********************
+PowerShell transcript start
+Start time: 20260607135232
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $logDir = Join-Path 'C:\Users\jadha\clicky.ai' 'logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $logPath = Join-Path $logDir "implement-read-sdk-context-$timestamp.log"; Start-Transcript -Path $logPath -Force | Out-Null; Write-Host "LOG_PATH=$logPath"; Get-Content .\clicky-web-sdk\src\core\ClickyClient.ts -Raw; Get-Content .\clicky-web-sdk\src\core\StateMachine.ts -Raw; Get-Content .\clicky-web-sdk\src\core\Config.ts -Raw; Get-Content .\clicky-web-sdk\src\core\types.ts -Raw; Stop-Transcript | Out-Null
+Process ID: 21128
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+LOG_PATH=C:\Users\jadha\clicky.ai\logs\implement-read-sdk-context-20260607-135231.log
+import { ActionPlanner } from "../actions/ActionPlanner";
+import { ActionRegistry } from "../actions/ActionRegistry";
+import { AssemblyAIClient } from "../api/AssemblyAIClient";
+import { ClaudeClient } from "../api/ClaudeClient";
+import { ElevenLabsClient } from "../api/ElevenLabsClient";
+import { HealthClient } from "../api/HealthClient";
+import { MemoryClient } from "../api/MemoryClient";
+import { SpeechUploadClient } from "../api/SpeechUploadClient";
+import { TelemetryClient } from "../api/TelemetryClient";
+import { WorkerProxy } from "../api/WorkerProxy";
+import { AudioPlayer } from "../audio/AudioPlayer";
+import { MicCapture } from "../audio/MicCapture";
+import { encodePcm16FramesToWavBase64 } from "../audio/WavEncoder";
+import { ContextCollector } from "../context/ContextCollector";
+import { ElementRegistry } from "../context/ElementRegistry";
+import { SemanticMapObserver } from "../context/SemanticMapObserver";
+import { OverlayRoot } from "../overlay/OverlayRoot";
+import { PanelRoot } from "../panel/PanelRoot";
+import { cleanAssistantResponse } from "../parsing/ResponseCleaner";
+import { EventBus } from "./EventBus";
+import { Lifecycle } from "./Lifecycle";
+import { LocalGuidanceEngine } from "./LocalGuidanceEngine";
+import { StateMachine } from "./StateMachine";
+import { normalizeOptions } from "./Config";
+import { Logger } from "../utils/logger";
+import type {
+  ClickyActionDefinition,
+  ClickyCapturedContext,
+  ClickyClientPublic,
+  ClickyConversationMessage,
+  ClickyDiagnostics,
+  ClickyEventHandler,
+  ClickyEventName,
+  ClickyHealthReport,
+  ClickyOptions,
+  ClickyPointCommand,
+  ClickySemanticProvider,
+  ClickyTaskOptions,
+  NormalizedClickyOptions
+} from "./types";
+
+export class ClickyClient implements ClickyClientPublic {
+  private readonly options: NormalizedClickyOptions;
+  private readonly eventBus = new EventBus();
+  private readonly stateMachine: StateMachine;
+  private readonly lifecycle = new Lifecycle();
+  private readonly elementRegistry = new ElementRegistry();
+  private readonly contextCollector: ContextCollector;
+  private readonly workerProxy: WorkerProxy;
+  private readonly healthClient: HealthClient;
+  private readonly claudeClient: ClaudeClient;
+  private readonly assemblyAIClient: AssemblyAIClient;
+  private readonly audioPlayer = new AudioPlayer();
+  private readonly elevenLabsClient: ElevenLabsClient;
+  private readonly speechUploadClient: SpeechUploadClient;
+  private readonly memoryClient: MemoryClient;
+  private readonly telemetryClient: TelemetryClient;
+  private readonly actionRegistry = new ActionRegistry();
+  private readonly actionPlanner: ActionPlanner;
+  private readonly localGuidanceEngine = new LocalGuidanceEngine();
+  private readonly micCapture = new MicCapture();
+  private readonly semanticMapObserver: SemanticMapObserver;
+  private readonly semanticProviders: ClickySemanticProvider[] = [];
+  private readonly panelRoot: PanelRoot;
+  private readonly overlayRoot: OverlayRoot;
+  private readonly conversationHistory: ClickyConversationMessage[] = [];
+  private readonly logger = new Logger("ClickyVoice", "info");
+  private isProcessingTranscript = false;
+  private latestTranscript = "";
+  private activeTaskId?: string;
+  private latestHealth?: ClickyHealthReport;
+  private lastError?: string;
+  private lastLatencyMs?: number;
+  private lastTarget?: ClickyPointCommand;
+  private readonly degradedProviders: Record<string, string> = {};
+  private taskStartedAt?: number;
+  private micStartedAt?: number;
+  private firstAudioFrameAt?: number;
+  private audioFrameCount = 0;
+  private partialTranscriptCount = 0;
+  private recordedSampleRate = 16000;
+  private readonly recordedPcm16Frames: Int16Array[] = [];
+  private readonly queuedPcm16FramesForStt: Int16Array[] = [];
+  private activeVoiceSessionId?: string;
+  private isStreamingSttReady = false;
+  private audioLevelTotal = 0;
+  private audioLevelPeak = 0;
+  private voiceLikeAudioFrameCount = 0;
+
+  constructor(rawOptions: ClickyOptions) {
+    this.options = normalizeOptions(rawOptions);
+    this.stateMachine = new StateMachine(this.eventBus);
+    this.contextCollector = new ContextCollector(this.options, this.elementRegistry);
+    this.workerProxy = new WorkerProxy(this.options.workerBaseUrl);
+    this.healthClient = new HealthClient(this.workerProxy, this.options);
+    this.claudeClient = new ClaudeClient(this.workerProxy, this.options);
+    this.assemblyAIClient = new AssemblyAIClient(this.workerProxy, this.eventBus, this.options);
+    this.elevenLabsClient = new ElevenLabsClient(this.workerProxy, this.audioPlayer, this.eventBus, this.options);
+    this.speechUploadClient = new SpeechUploadClient(this.workerProxy, this.options);
+    this.memoryClient = new MemoryClient(this.workerProxy, this.options);
+    this.telemetryClient = new TelemetryClient(this.workerProxy, this.options);
+    this.actionPlanner = new ActionPlanner(this.options, this.actionRegistry, this.elementRegistry, this.eventBus);
+    this.semanticMapObserver = new SemanticMapObserver(() => void this.handleDomChanged());
+    this.overlayRoot = new OverlayRoot(this.options, this.elementRegistry);
+    this.panelRoot = new PanelRoot(this.options, this.eventBus, {
+      onSendText: (text) => void this.sendUserText(text),
+      onStartTalk: () => void this.startTask({ inputMode: "voice" }),
+      onStopTalk: () => void this.stopPushToTalk(),
+      onConfirmAction: () => void this.confirmPendingAction(),
+      onRejectAction: () => this.rejectPendingAction()
+    });
+
+    this.installHotkeyListeners();
+    this.installInternalEventHandlers();
+    this.lifecycle.add(() => this.panelRoot.destroy());
+    this.lifecycle.add(() => this.overlayRoot.destroy());
+    this.lifecycle.add(() => this.eventBus.clear());
+    this.lifecycle.add(() => this.assemblyAIClient.close());
+    this.lifecycle.add(() => this.micCapture.stop());
+    this.lifecycle.add(() => this.audioPlayer.destroy());
+    void this.bootstrapRuntime();
+  }
+
+  open(): void {
+    this.panelRoot.open();
+  }
+
+  close(): void {
+    this.panelRoot.close();
+  }
+
+  async destroy(): Promise<void> {
+    await this.lifecycle.destroy();
+  }
+
+  async startPushToTalk(): Promise<void> {
+    if (!this.options.enableVoice || this.stateMachine.getState() !== "idle") {
+      return;
+    }
+
+    try {
+      const voiceSessionId = crypto.randomUUID();
+      this.activeVoiceSessionId = voiceSessionId;
+      this.isStreamingSttReady = false;
+      this.latestTranscript = "";
+      this.stateMachine.setState("listening");
+      this.eventBus.emit("mic:start", undefined);
+      this.micStartedAt = performance.now();
+      this.firstAudioFrameAt = undefined;
+      this.audioFrameCount = 0;
+      this.partialTranscriptCount = 0;
+      this.audioLevelTotal = 0;
+      this.audioLevelPeak = 0;
+      this.voiceLikeAudioFrameCount = 0;
+      this.recordedPcm16Frames.splice(0);
+      this.queuedPcm16FramesForStt.splice(0);
+      this.logStage("mic.permission.requested");
+      this.micCapture.onAudioFrame((pcm16Frame) => this.handleMicAudioFrame(voiceSessionId, pcm16Frame));
+      const sampleRate = await this.micCapture.start();
+      this.recordedSampleRate = sampleRate;
+      this.logStage("mic.capture.started", { sampleRate });
+      await this.assemblyAIClient.connect(sampleRate);
+      if (this.activeVoiceSessionId !== voiceSessionId || this.stateMachine.getState() !== "listening") {
+        this.assemblyAIClient.close();
+        return;
+      }
+      this.isStreamingSttReady = true;
+      this.flushQueuedAudioFramesToStreamingStt();
+      this.logStage("stt.websocket.connected", {
+        latencyMs: this.micStartedAt ? Math.round(performance.now() - this.micStartedAt) : undefined,
+        queuedFramesFlushed: this.queuedPcm16FramesForStt.length
+      });
+    } catch (error) {
+      if (this.stateMachine.getState() === "listening") {
+        this.handleVoiceCaptureError(error);
+      } else {
+        this.logStage("stt.connect.cancelled", { message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  }
+
+  async stopPushToTalk(): Promise<void> {
+    if (this.stateMachine.getState() !== "listening") {
+      return;
+    }
+
+    this.stateMachine.setState("transcribing");
+    this.micCapture.stop();
+    this.activeVoiceSessionId = undefined;
+    this.isStreamingSttReady = false;
+    this.eventBus.emit("mic:stop", undefined);
+    this.logStage("mic.capture.stopped", {
+      frames: this.audioFrameCount,
+      averageLevel: this.getAverageAudioLevel(),
+      peakLevel: this.audioLevelPeak,
+      voiceLikeFrames: this.voiceLikeAudioFrameCount
+    });
+    await this.assemblyAIClient.finishTurn();
+
+    if (!this.latestTranscript) {
+      await this.transcribeRecordedAudioFallback();
+    }
+
+    if (this.latestTranscript && !this.isProcessingTranscript) {
+      await this.processUserText(this.latestTranscript);
+    } else if (this.stateMachine.getState() === "transcribing") {
+      this.stateMachine.setState("idle");
+      this.endTask("error");
+      this.panelRoot.companionPanel.appendMessage(
+        "assistant",
+        this.createEmptyTranscriptionMessage()
+      );
+    }
+  }
+
+  private handleMicAudioFrame(voiceSessionId: string, pcm16Frame: Int16Array): void {
+    if (this.activeVoiceSessionId !== voiceSessionId) {
+      return;
+    }
+
+    if (!this.firstAudioFrameAt) {
+      this.firstAudioFrameAt = performance.now();
+      this.logStage("mic.audio.first_frame", {
+        latencyMs: this.micStartedAt ? Math.round(this.firstAudioFrameAt - this.micStartedAt) : undefined
+      });
+    }
+
+    this.audioFrameCount += 1;
+    const copiedPcm16Frame = pcm16Frame.slice();
+    const audioLevel = this.calculatePcm16Level(copiedPcm16Frame);
+    this.audioLevelTotal += audioLevel;
+    this.audioLevelPeak = Math.max(this.audioLevelPeak, audioLevel);
+    if (audioLevel > 0.012) {
+      this.voiceLikeAudioFrameCount += 1;
+    }
+    this.recordedPcm16Frames.push(copiedPcm16Frame);
+
+    if (this.audioFrameCount === 1 || this.audioFrameCount % 20 === 0) {
+      this.logStage("mic.audio.frame_count", {
+        count: this.audioFrameCount,
+        level: audioLevel,
+        peakLevel: this.audioLevelPeak
+      });
+    }
+
+    if (this.isStreamingSttReady) {
+      this.assemblyAIClient.sendAudioFrame(copiedPcm16Frame);
+      return;
+    }
+
+    this.queuedPcm16FramesForStt.push(copiedPcm16Frame);
+  }
+
+  private flushQueuedAudioFramesToStreamingStt(): void {
+    const queuedFrameCount = this.queuedPcm16FramesForStt.length;
+    for (const queuedPcm16Frame of this.queuedPcm16FramesForStt) {
+      this.assemblyAIClient.sendAudioFrame(queuedPcm16Frame);
+    }
+    this.queuedPcm16FramesForStt.splice(0);
+    this.logStage("stt.audio.queue_flushed", { frames: queuedFrameCount });
+  }
+
+  private calculatePcm16Level(pcm16Frame: Int16Array): number {
+    if (pcm16Frame.length === 0) {
+      return 0;
+    }
+
+    let totalSquaredSampleValue = 0;
+    for (const pcm16Sample of pcm16Frame) {
+      const normalizedSample = pcm16Sample / 32768;
+      totalSquaredSampleValue += normalizedSample * normalizedSample;
+    }
+
+    return Number(Math.sqrt(totalSquaredSampleValue / pcm16Frame.length).toFixed(4));
+  }
+
+  private getAverageAudioLevel(): number {
+    if (this.audioFrameCount === 0) {
+      return 0;
+    }
+
+    return Number((this.audioLevelTotal / this.audioFrameCount).toFixed(4));
+  }
+
+  private createEmptyTranscriptionMessage(): string {
+    if (this.audioLevelPeak < 0.006 || this.voiceLikeAudioFrameCount === 0) {
+      return "The microphone opened, but the captured audio looks silent. Check the Windows input device and Chrome microphone source, then speak while holding the Mic button.";
+    }
+
+    return "I received non-silent microphone audio, but speech transcription still returned empty text. Try once more; if this repeats, we need to inspect the captured WAV.";
+  }
+
+  async sendUserText(text: string): Promise<void> {
+    await this.startTask({ inputMode: "text", initialText: text });
+  }
+
+  async healthCheck(): Promise<ClickyHealthReport> {
+    const health = await this.healthClient.check();
+    this.latestHealth = health;
+    this.eventBus.emit("health:changed", { health });
+    if (!health.ok) {
+      this.markProviderDegraded("worker", health.error ?? "health check failed");
+    } else {
+      this.markProviderRecovered("worker");
+    }
+    return health;
+  }
+
+  async startTask(options: ClickyTaskOptions): Promise<void> {
+    if (this.activeTaskId) {
+      this.endTask("cancelled");
+    }
+
+    this.activeTaskId = crypto.randomUUID();
+    this.taskStartedAt = performance.now();
+    this.logStage("task.started", { inputMode: options.inputMode });
+    this.semanticMapObserver.start();
+    this.eventBus.emit("task:started", { taskId: this.activeTaskId, inputMode: options.inputMode });
+    void this.captureTelemetry("task_started", { inputMode: options.inputMode, taskId: this.activeTaskId });
+
+    if (options.inputMode === "voice") {
+      await this.startPushToTalk();
+      return;
+    }
+
+    if (options.initialText) {
+      await this.processUserText(options.initialText);
+    }
+  }
+
+  endTask(reason: "completed" | "cancelled" | "error" = "completed"): void {
+    if (!this.activeTaskId) {
+      return;
+    }
+
+    const taskId = this.activeTaskId;
+    this.activeTaskId = undefined;
+    this.semanticMapObserver.stop();
+    this.eventBus.emit("task:ended", { taskId, reason });
+    void this.captureTelemetry("task_ended", { taskId, reason });
+  }
+
+  getDiagnostics(): ClickyDiagnostics {
+    return {
+      state: this.stateMachine.getState(),
+      health: this.latestHealth,
+      activeTaskId: this.activeTaskId,
+      semanticMapVersion: this.contextCollector.getSemanticMapVersion(),
+      lastError: this.lastError,
+      lastLatencyMs: this.lastLatencyMs,
+      lastTarget: this.lastTarget,
+      degradedProviders: { ...this.degradedProviders }
+    };
+  }
+
+  async captureContext(): Promise<ClickyCapturedContext> {
+    const context = await this.contextCollector.capture();
+    this.eventBus.emit("context:captured", { context });
+    return context;
+  }
+
+  registerAction(actionDefinition: ClickyActionDefinition): void {
+    this.actionRegistry.registerAction(actionDefinition);
+  }
+
+  unregisterAction(actionId: string): void {
+    this.actionRegistry.unregisterAction(actionId);
+  }
+
+  registerSemanticProvider(provider: ClickySemanticProvider): void {
+    this.semanticProviders.push(provider);
+  }
+
+  on<EventName extends ClickyEventName>(eventName: EventName, handler: ClickyEventHandler<EventName>): () => void {
+    return this.eventBus.on(eventName, handler);
+  }
+
+  private async processUserText(userText: string): Promise<void> {
+    const normalizedUserText = userText.trim();
+    if (!normalizedUserText || this.isProcessingTranscript) {
+      return;
+    }
+
+    this.isProcessingTranscript = true;
+    const startedAt = performance.now();
+    this.panelRoot.companionPanel.appendMessage("user", normalizedUserText);
+
+    try {
+      this.stateMachine.setState("capturing-context");
+      const capturedContext = await this.contextCollector.capture({
+        includeScreenshot: this.options.enableScreenshots && this.options.contextMode === "screenshot-first"
+      });
+      await this.applySemanticProviders(capturedContext);
+      this.eventBus.emit("context:captured", { context: capturedContext });
+
+      this.stateMachine.setState("responding");
+      const chatStartedAt = performance.now();
+      this.logStage("chat.request.start", { length: normalizedUserText.length });
+      const rawAssistantText = await this.streamAssistantTextWithFallback(normalizedUserText, capturedContext);
+      this.logStage("chat.response.done", { latencyMs: Math.round(performance.now() - chatStartedAt) });
+
+      const cleanedResponse = cleanAssistantResponse(rawAssistantText);
+      if (cleanedResponse.pointCommand.type === "none") {
+        cleanedResponse.pointCommand = this.localGuidanceEngine.createPointCommand(normalizedUserText, capturedContext);
+      }
+      this.eventBus.emit("assistant:done", {
+        text: rawAssistantText,
+        spokenText: cleanedResponse.spokenText
+      });
+      this.eventBus.emit("overlay:point", { command: cleanedResponse.pointCommand });
+      this.lastTarget = cleanedResponse.pointCommand;
+      const didPoint = this.pointAtCommand(cleanedResponse.pointCommand, capturedContext);
+      if (didPoint) {
+        this.eventBus.emit("cursor:targeted", { command: cleanedResponse.pointCommand });
+      } else if (cleanedResponse.pointCommand.type !== "none") {
+        this.eventBus.emit("cursor:missed", { command: cleanedResponse.pointCommand, reason: "target not found" });
+      }
+
+      this.conversationHistory.push({ role: "user", text: normalizedUserText });
+      this.conversationHistory.push({ role: "assistant", text: cleanedResponse.spokenText });
+      this.trimConversationHistory();
+      await this.saveMemory();
+
+      if (this.options.enableTTS && cleanedResponse.spokenText) {
+        this.stateMachine.setState("speaking");
+        const ttsStartedAt = performance.now();
+        this.logStage("tts.request.start", { length: cleanedResponse.spokenText.length });
+        try {
+          await this.elevenLabsClient.speak(cleanedResponse.spokenText);
+          this.logStage("tts.playback.done", { latencyMs: Math.round(performance.now() - ttsStartedAt) });
+        } catch (error) {
+          this.markProviderDegraded("tts", error instanceof Error ? error.message : String(error));
+        }
+      }
+
+      await this.actionPlanner.handleProposedAction(cleanedResponse.proposedAction, capturedContext);
+      if (this.actionPlanner.hasPendingAction()) {
+        this.stateMachine.setState("awaiting-action-confirmation");
+      } else {
+        this.stateMachine.setState("idle");
+        this.endTask("completed");
+      }
+      this.lastLatencyMs = Math.round(performance.now() - startedAt);
+      await this.captureTelemetry("task_turn_completed", {
+        taskId: this.activeTaskId,
+        latencyMs: this.lastLatencyMs,
+        didPoint,
+        pointType: cleanedResponse.pointCommand.type
+      });
+    } catch (error) {
+      this.endTask("error");
+      this.handleError(error);
+    } finally {
+      this.isProcessingTranscript = false;
+    }
+  }
+
+  private async confirmPendingAction(): Promise<void> {
+    try {
+      this.stateMachine.setState("executing-action");
+      await this.actionPlanner.confirmPendingAction();
+      this.stateMachine.setState("idle");
+      this.endTask("completed");
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  private async streamAssistantTextWithFallback(
+    normalizedUserText: string,
+    capturedContext: ClickyCapturedContext
+  ): Promise<string> {
+    try {
+      return await this.claudeClient.streamChat({
+        userText: normalizedUserText,
+        capturedContext,
+        conversationHistory: this.conversationHistory,
+        registeredActions: this.actionRegistry.listActions().map((action) => ({
+          id: action.id,
+          name: action.name,
+          description: action.description,
+          parametersSchema: action.parametersSchema
+        })),
+        onToken: (token, fullText) => this.eventBus.emit("assistant:token", { token, fullText })
+      });
+    } catch (error) {
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      if (!this.options.enableLocalFallback) {
+        this.markProviderDegraded("chat", normalizedError.message);
+        throw normalizedError;
+      }
+      this.markProviderDegraded("chat", normalizedError.message);
+
+      const fallbackText = this.localGuidanceEngine.createFallbackResponse(
+        normalizedUserText,
+        capturedContext,
+        normalizedError
+      );
+      this.eventBus.emit("assistant:token", { token: fallbackText, fullText: fallbackText });
+      return fallbackText;
+    }
+  }
+
+  private async transcribeRecordedAudioFallback(): Promise<void> {
+    if (this.recordedPcm16Frames.length === 0) {
+      this.logStage("stt.upload.skipped_empty_audio");
+      return;
+    }
+
+    try {
+      this.logStage("stt.upload.start", { frames: this.recordedPcm16Frames.length });
+      const audioBase64 = encodePcm16FramesToWavBase64(this.recordedPcm16Frames, this.recordedSampleRate);
+      const uploadResult = await this.speechUploadClient.transcribeWavBase64(audioBase64, this.recordedSampleRate);
+      if (uploadResult.transcript) {
+        this.latestTranscript = uploadResult.transcript;
+        this.logStage("stt.upload.final", {
+          length: uploadResult.transcript.length,
+          provider: uploadResult.provider ?? "unknown"
+        });
+        this.eventBus.emit("transcript:final", { text: uploadResult.transcript });
+      } else {
+        this.logStage("stt.upload.empty_result", {
+          provider: uploadResult.provider ?? "unknown",
+          averageLevel: this.getAverageAudioLevel(),
+          peakLevel: this.audioLevelPeak,
+          voiceLikeFrames: this.voiceLikeAudioFrameCount
+        });
+      }
+    } catch (error) {
+      this.markProviderDegraded("stt-upload", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private pointAtCommand(pointCommand: ClickyPointCommand, capturedContext: ClickyCapturedContext): boolean {
+    const didPoint = this.overlayRoot.cursorOverlay.point(pointCommand);
+    if (didPoint || pointCommand.type !== "element") {
+      return didPoint;
+    }
+
+    const capturedElement = capturedContext.elements.find((element) => element.id === pointCommand.elementId);
+    if (!capturedElement) {
+      return false;
+    }
+
+    const liveElementFromSelector = this.resolveCapturedElement(capturedElement.selector);
+    if (liveElementFromSelector) {
+      this.overlayRoot.cursorOverlay.pointAtElement(liveElementFromSelector, pointCommand.label || capturedElement.label);
+      return true;
+    }
+
+    return this.overlayRoot.cursorOverlay.point({
+      type: "coordinate",
+      x: capturedElement.bounds.x + capturedElement.bounds.width / 2,
+      y: capturedElement.bounds.y + capturedElement.bounds.height / 2,
+      label: pointCommand.label || capturedElement.label
+    });
+  }
+
+  private resolveCapturedElement(selector: string): Element | undefined {
+    if (!selector) {
+      return undefined;
+    }
+
+    try {
+      const element = document.querySelector(selector);
+      return element ?? undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private rejectPendingAction(): void {
+    this.actionPlanner.rejectPendingAction();
+    this.panelRoot.companionPanel.hideActionConfirmation();
+    this.stateMachine.setState("idle");
+    this.endTask("cancelled");
+  }
+
+  private async bootstrapRuntime(): Promise<void> {
+    await this.healthCheck();
+    await this.loadMemory();
+  }
+
+  private async handleDomChanged(): Promise<void> {
+    const semanticMapVersion = this.contextCollector.markDomChanged();
+    this.eventBus.emit("dom:changed", { semanticMapVersion });
+
+    if (!this.activeTaskId) {
+      return;
+    }
+
+    const context = await this.contextCollector.capture();
+    await this.applySemanticProviders(context);
+    this.eventBus.emit("semantic-map:updated", { context });
+  }
+
+  private async applySemanticProviders(context: ClickyCapturedContext): Promise<void> {
+    for (const semanticProvider of this.semanticProviders) {
+      await semanticProvider.collect(context);
+    }
+  }
+
+  private async loadMemory(): Promise<void> {
+    try {
+      const memory = await this.memoryClient.load();
+      if (memory?.conversationHistory) {
+        this.conversationHistory.splice(0, this.conversationHistory.length, ...memory.conversationHistory);
+      }
+      this.eventBus.emit("memory:loaded", { value: memory });
+    } catch (error) {
+      this.markProviderDegraded("memory", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private async saveMemory(): Promise<void> {
+    try {
+      await this.memoryClient.save(this.conversationHistory);
+      this.eventBus.emit("memory:saved", { ok: true });
+    } catch (error) {
+      this.markProviderDegraded("memory", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private async captureTelemetry(eventName: string, properties: Record<string, unknown> = {}): Promise<void> {
+    try {
+      await this.telemetryClient.capture(eventName, properties);
+      this.eventBus.emit("telemetry:sent", { eventName });
+    } catch (error) {
+      this.markProviderDegraded("telemetry", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private markProviderDegraded(provider: string, reason: string): void {
+    this.degradedProviders[provider] = reason;
+    this.eventBus.emit("provider:degraded", { provider, reason });
+  }
+
+  private markProviderRecovered(provider: string): void {
+    if (this.degradedProviders[provider]) {
+      delete this.degradedProviders[provider];
+      this.eventBus.emit("provider:recovered", { provider });
+    }
+  }
+
+  private installInternalEventHandlers(): void {
+    this.eventBus.on("transcript:partial", ({ text }) => {
+      this.latestTranscript = text;
+      this.partialTranscriptCount += 1;
+      if (this.partialTranscriptCount % 5 === 0) {
+        this.logStage("stt.transcript.partial", { length: text.length, count: this.partialTranscriptCount });
+      }
+    });
+    this.eventBus.on("transcript:final", ({ text }) => {
+      this.latestTranscript = text;
+      this.logStage("stt.transcript.final", { length: text.length });
+      if (this.stateMachine.getState() === "transcribing" && !this.isProcessingTranscript) {
+        void this.processUserText(text);
+      }
+    });
+    this.eventBus.on("error", ({ error }) => {
+      this.logStage("error", { message: error.message });
+    });
+  }
+
+  private installHotkeyListeners(): void {
+    const pressedCodes = new Set<string>();
+
+    const keydownHandler = (event: KeyboardEvent) => {
+      if (event.repeat || this.isEditableTarget(event.target)) {
+        return;
+      }
+
+      pressedCodes.add(event.code);
+      if (this.matchesHotkey(event, pressedCodes)) {
+        event.preventDefault();
+        void this.startPushToTalk();
+      }
+    };
+
+    const keyupHandler = (event: KeyboardEvent) => {
+      pressedCodes.delete(event.code);
+      if (this.stateMachine.getState() === "listening") {
+        void this.stopPushToTalk();
+      }
+    };
+
+    window.addEventListener("keydown", keydownHandler);
+    window.addEventListener("keyup", keyupHandler);
+    window.addEventListener("blur", keyupHandler as EventListener);
+    this.lifecycle.add(() => {
+      window.removeEventListener("keydown", keydownHandler);
+      window.removeEventListener("keyup", keyupHandler);
+      window.removeEventListener("blur", keyupHandler as EventListener);
+    });
+  }
+
+  private matchesHotkey(event: KeyboardEvent, pressedCodes: Set<string>): boolean {
+    const hotkey = this.options.hotkey;
+    const modifierMatches =
+      event.ctrlKey === !!hotkey.ctrl &&
+      event.altKey === !!hotkey.alt &&
+      event.shiftKey === !!hotkey.shift &&
+      event.metaKey === !!hotkey.meta;
+
+    if (!modifierMatches) {
+      return false;
+    }
+
+    return hotkey.code ? pressedCodes.has(hotkey.code) : true;
+  }
+
+  private isEditableTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    return (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target.isContentEditable ||
+      target.getAttribute("role") === "textbox"
+    );
+  }
+
+  private trimConversationHistory(): void {
+    const maximumMessages = 16;
+    if (this.conversationHistory.length > maximumMessages) {
+      this.conversationHistory.splice(0, this.conversationHistory.length - maximumMessages);
+    }
+  }
+
+  private handleError(error: unknown): void {
+    const normalizedError = error instanceof Error ? error : new Error(String(error));
+    this.lastError = normalizedError.message;
+    this.logStage("error", { message: normalizedError.message });
+    this.eventBus.emit("error", { error: normalizedError });
+    this.panelRoot.companionPanel.appendMessage("assistant", normalizedError.message);
+    try {
+      this.stateMachine.setState("error");
+      this.stateMachine.setState("idle");
+    } catch {
+      // If an error occurs during another recovery transition, keep the UI usable.
+    }
+    this.isProcessingTranscript = false;
+  }
+
+  private handleVoiceCaptureError(error: unknown): void {
+    const normalizedError = error instanceof DOMException ? error : error instanceof Error ? error : new Error(String(error));
+    const isPermissionDenied =
+      normalizedError instanceof DOMException &&
+      (normalizedError.name === "NotAllowedError" || normalizedError.name === "SecurityError");
+    const message = isPermissionDenied
+      ? "Microphone permission is blocked for this page. Click the site icon in the address bar, allow Microphone for 127.0.0.1, then reload the demo."
+      : normalizedError.message;
+
+    this.lastError = message;
+    this.logStage("voice.capture.error", { message, name: normalizedError.name });
+    this.eventBus.emit("error", { error: new Error(message) });
+    this.panelRoot.companionPanel.appendMessage("assistant", message);
+    this.micCapture.stop();
+    this.activeVoiceSessionId = undefined;
+    this.isStreamingSttReady = false;
+    this.stateMachine.setState("idle");
+    this.endTask("error");
+  }
+
+  private logStage(stage: string, details: Record<string, unknown> = {}): void {
+    const timestamp = new Date().toISOString();
+    const sinceTaskMs = this.taskStartedAt
+      ? Math.round(performance.now() - this.taskStartedAt)
+      : undefined;
+    this.logger.info(stage, {
+      timestamp,
+      sinceTaskMs,
+      ...details
+    });
+  }
+}
+import { EventBus } from "./EventBus";
+import type { ClickyState } from "./types";
+
+const allowedTransitions: Record<ClickyState, ClickyState[]> = {
+  idle: ["listening", "capturing-context", "responding", "error"],
+  listening: ["transcribing", "idle", "error"],
+  transcribing: ["capturing-context", "idle", "error"],
+  "capturing-context": ["responding", "idle", "error"],
+  responding: ["speaking", "awaiting-action-confirmation", "executing-action", "idle", "error"],
+  speaking: ["awaiting-action-confirmation", "executing-action", "idle", "error"],
+  "awaiting-action-confirmation": ["executing-action", "idle", "error"],
+  "executing-action": ["idle", "responding", "error"],
+  error: ["idle"]
+};
+
+export class StateMachine {
+  private currentState: ClickyState = "idle";
+
+  constructor(private readonly eventBus: EventBus) {}
+
+  getState(): ClickyState {
+    return this.currentState;
+  }
+
+  canTransition(fromState: ClickyState, nextState: ClickyState): boolean {
+    return fromState === nextState || allowedTransitions[fromState].includes(nextState);
+  }
+
+  setState(nextState: ClickyState): void {
+    const previousState = this.currentState;
+    if (!this.canTransition(previousState, nextState)) {
+      throw new Error(`Invalid Clicky state transition from ${previousState} to ${nextState}`);
+    }
+
+    if (previousState === nextState) {
+      return;
+    }
+
+    this.currentState = nextState;
+    this.eventBus.emit("state:changed", { previousState, nextState });
+  }
+}
+import { createUuid } from "../utils/uuid";
+import type { ClickyOptions, NormalizedClickyOptions } from "./types";
+
+const defaultHotkey = {
+  ctrl: true,
+  alt: true,
+  shift: false,
+  meta: false
+};
+
+export function normalizeOptions(rawOptions: ClickyOptions): NormalizedClickyOptions {
+  assertValidOptions(rawOptions);
+
+  return {
+    workerBaseUrl: rawOptions.workerBaseUrl.replace(/\/+$/, ""),
+    appName: rawOptions.appName.trim(),
+    tenantId: rawOptions.tenantId ?? "default-tenant",
+    userId: rawOptions.userId ?? "anonymous",
+    sessionId: rawOptions.sessionId ?? createUuid("clicky-session"),
+    environment: rawOptions.environment ?? "development",
+    mountElement: rawOptions.mountElement ?? document.body,
+    hotkey: { ...defaultHotkey, ...rawOptions.hotkey },
+    enableVoice: rawOptions.enableVoice ?? true,
+    enableTTS: rawOptions.enableTTS ?? true,
+    enableScreenshots: rawOptions.enableScreenshots ?? false,
+    telemetryEnabled: rawOptions.telemetryEnabled ?? true,
+    memoryEnabled: rawOptions.memoryEnabled ?? true,
+    voiceProvider: rawOptions.voiceProvider ?? "deepgram",
+    chatProvider: rawOptions.chatProvider ?? "gemini",
+    ttsProvider: rawOptions.ttsProvider ?? "elevenlabs",
+    realtimeMode: rawOptions.realtimeMode ?? "user-triggered-task",
+    contextMode: rawOptions.contextMode ?? "dom-first",
+    actionMode: rawOptions.actionMode ?? "confirm-before-execute",
+    theme: {
+      accentColor: rawOptions.theme?.accentColor ?? "#1683ff",
+      panelBackgroundColor: rawOptions.theme?.panelBackgroundColor ?? "#10151f",
+      textColor: rawOptions.theme?.textColor ?? "#f8fbff",
+      zIndex: rawOptions.theme?.zIndex ?? 2147483000
+    },
+    systemPrompt: rawOptions.systemPrompt,
+    privacy: {
+      privateSelectors: rawOptions.privacy?.privateSelectors ?? [],
+      ignoredSelectors: rawOptions.privacy?.ignoredSelectors ?? [],
+      includeInputValues: rawOptions.privacy?.includeInputValues ?? false
+    },
+    apiRoutes: {
+      chat: rawOptions.apiRoutes?.chat ?? "/ai/chat",
+      sttToken: rawOptions.apiRoutes?.sttToken ?? "/voice/stt",
+      sttUpload: rawOptions.apiRoutes?.sttUpload ?? "/voice/stt",
+      tts: rawOptions.apiRoutes?.tts ?? "/voice/tts",
+      memorySave: rawOptions.apiRoutes?.memorySave ?? "/memory/save",
+      memoryLoad: rawOptions.apiRoutes?.memoryLoad ?? "/memory/load",
+      telemetryEvent: rawOptions.apiRoutes?.telemetryEvent ?? "/telemetry/event",
+      health: rawOptions.apiRoutes?.health ?? "/health"
+    },
+    enableLocalFallback: rawOptions.enableLocalFallback ?? false
+  };
+}
+
+export function assertValidOptions(rawOptions: ClickyOptions): void {
+  if (!rawOptions || typeof rawOptions !== "object") {
+    throw new Error("ClickySDK.init requires an options object");
+  }
+
+  if (!rawOptions.workerBaseUrl || typeof rawOptions.workerBaseUrl !== "string") {
+    throw new Error("ClickySDK.init requires workerBaseUrl");
+  }
+
+  if (!rawOptions.appName || typeof rawOptions.appName !== "string" || rawOptions.appName.trim().length === 0) {
+    throw new Error("ClickySDK.init requires appName");
+  }
+
+  if (rawOptions.mountElement && !(rawOptions.mountElement instanceof HTMLElement)) {
+    throw new Error("mountElement must be an HTMLElement");
+  }
+}
+export type ClickyState =
+  | "idle"
+  | "listening"
+  | "transcribing"
+  | "capturing-context"
+  | "responding"
+  | "speaking"
+  | "awaiting-action-confirmation"
+  | "executing-action"
+  | "error";
+
+export type ClickyContextMode = "dom-first" | "dom-only" | "screenshot-first";
+export type ClickyActionMode = "disabled" | "confirm-before-execute" | "execute-registered-actions";
+export type ClickyEnvironment = "development" | "staging" | "production";
+export type ClickyRealtimeMode = "user-triggered-task";
+export type ClickyVoiceProvider = "deepgram" | "assemblyai";
+export type ClickyChatProvider = "gemini" | "anthropic";
+export type ClickyTtsProvider = "elevenlabs";
+
+export type ClickyHotkey = {
+  ctrl?: boolean;
+  alt?: boolean;
+  shift?: boolean;
+  meta?: boolean;
+  code?: string;
+};
+
+export type ClickyThemeOptions = {
+  accentColor?: string;
+  panelBackgroundColor?: string;
+  textColor?: string;
+  zIndex?: number;
+};
+
+export type ClickyPrivacyOptions = {
+  privateSelectors?: string[];
+  ignoredSelectors?: string[];
+  includeInputValues?: boolean;
+};
+
+export type ClickyApiRoutes = {
+  chat?: string;
+  sttToken?: string;
+  sttUpload?: string;
+  tts?: string;
+  memorySave?: string;
+  memoryLoad?: string;
+  telemetryEvent?: string;
+  health?: string;
+};
+
+export type ClickyOptions = {
+  workerBaseUrl: string;
+  appName: string;
+  tenantId?: string;
+  userId?: string;
+  sessionId?: string;
+  environment?: ClickyEnvironment;
+  mountElement?: HTMLElement;
+  hotkey?: ClickyHotkey;
+  enableVoice?: boolean;
+  enableTTS?: boolean;
+  enableScreenshots?: boolean;
+  telemetryEnabled?: boolean;
+  memoryEnabled?: boolean;
+  voiceProvider?: ClickyVoiceProvider;
+  chatProvider?: ClickyChatProvider;
+  ttsProvider?: ClickyTtsProvider;
+  realtimeMode?: ClickyRealtimeMode;
+  contextMode?: ClickyContextMode;
+  actionMode?: ClickyActionMode;
+  theme?: ClickyThemeOptions;
+  systemPrompt?: string;
+  privacy?: ClickyPrivacyOptions;
+  apiRoutes?: ClickyApiRoutes;
+  enableLocalFallback?: boolean;
+};
+
+export type NormalizedClickyOptions = Required<
+  Pick<
+    ClickyOptions,
+    | "workerBaseUrl"
+    | "appName"
+    | "tenantId"
+    | "userId"
+    | "sessionId"
+    | "environment"
+    | "hotkey"
+    | "enableVoice"
+    | "enableTTS"
+    | "enableScreenshots"
+    | "telemetryEnabled"
+    | "memoryEnabled"
+    | "voiceProvider"
+    | "chatProvider"
+    | "ttsProvider"
+    | "realtimeMode"
+    | "contextMode"
+    | "actionMode"
+  >
+> & {
+  mountElement: HTMLElement;
+  theme: Required<ClickyThemeOptions>;
+  systemPrompt?: string;
+  privacy: Required<ClickyPrivacyOptions>;
+  apiRoutes: Required<ClickyApiRoutes>;
+  enableLocalFallback: boolean;
+};
+
+export type ClickyCapturedElement = {
+  id: string;
+  tagName: string;
+  role?: string;
+  label: string;
+  text: string;
+  selector: string;
+  bounds: ClickyRect;
+  isInteractive: boolean;
+};
+
+export type ClickyRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type ClickyScreenshot = {
+  mimeType: "image/png" | "image/jpeg";
+  base64: string;
+  width: number;
+  height: number;
+  label: string;
+};
+
+export type ClickyCapturedContext = {
+  semanticMapVersion: number;
+  appName: string;
+  tenantId: string;
+  userId: string;
+  sessionId: string;
+  url: string;
+  title: string;
+  viewport: {
+    width: number;
+    height: number;
+    scrollX: number;
+    scrollY: number;
+  };
+  pageText: string;
+  elements: ClickyCapturedElement[];
+  screenshots: ClickyScreenshot[];
+  capturedAt: string;
+};
+
+export type ClickyHealthReport = {
+  ok: boolean;
+  requestId?: string;
+  timestamp?: string;
+  providers?: Record<string, string>;
+  error?: string;
+};
+
+export type ClickyDiagnostics = {
+  state: ClickyState;
+  health?: ClickyHealthReport;
+  activeTaskId?: string;
+  semanticMapVersion: number;
+  lastError?: string;
+  lastLatencyMs?: number;
+  lastTarget?: ClickyPointCommand;
+  degradedProviders: Record<string, string>;
+};
+
+export type ClickyTaskOptions = {
+  inputMode: "text" | "voice";
+  initialText?: string;
+};
+
+export type ClickySemanticProvider = {
+  collect(context: ClickyCapturedContext): Record<string, unknown> | Promise<Record<string, unknown>>;
+};
+
+export type ClickyConversationMessage = {
+  role: "user" | "assistant";
+  text: string;
+};
+
+export type ClickyPointCommand =
+  | { type: "none" }
+  | { type: "element"; elementId: string; label?: string }
+  | { type: "coordinate"; x: number; y: number; label?: string };
+
+export type ClickyParsedPointResult = {
+  spokenText: string;
+  pointCommand: ClickyPointCommand;
+};
+
+export type ClickyActionDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  parametersSchema: Record<string, unknown>;
+  requiresConfirmation?: boolean;
+  allowSensitiveFields?: boolean;
+  execute(parameters: Record<string, unknown>, context: ClickyActionContext): Promise<ClickyActionResult>;
+};
+
+export type ClickyActionContext = {
+  capturedContext: ClickyCapturedContext;
+  elementRegistry: {
+    getElementById(elementId: string): Element | undefined;
+  };
+};
+
+export type ClickyActionResult = {
+  ok: boolean;
+  message?: string;
+  data?: unknown;
+};
+
+export type ClickyProposedAction = {
+  actionId: string;
+  parameters: Record<string, unknown>;
+  definition: ClickyActionDefinition;
+};
+
+export type ClickyParsedActionResult = {
+  cleanedText: string;
+  proposedAction?: {
+    actionId: string;
+    parameters: Record<string, unknown>;
+  };
+};
+
+export type ClickyEventMap = {
+  "state:changed": { previousState: ClickyState; nextState: ClickyState };
+  "mic:start": undefined;
+  "mic:stop": undefined;
+  "transcript:partial": { text: string };
+  "transcript:final": { text: string };
+  "context:captured": { context: ClickyCapturedContext };
+  "health:changed": { health: ClickyHealthReport };
+  "task:started": { taskId: string; inputMode: "text" | "voice" };
+  "task:ended": { taskId: string; reason: "completed" | "cancelled" | "error" };
+  "dom:changed": { semanticMapVersion: number };
+  "semantic-map:updated": { context: ClickyCapturedContext };
+  "assistant:token": { token: string; fullText: string };
+  "assistant:done": { text: string; spokenText: string };
+  "tts:start": undefined;
+  "tts:end": undefined;
+  "overlay:point": { command: ClickyPointCommand };
+  "cursor:targeted": { command: ClickyPointCommand };
+  "cursor:missed": { command: ClickyPointCommand; reason: string };
+  "provider:degraded": { provider: string; reason: string };
+  "provider:recovered": { provider: string };
+  "memory:loaded": { value: unknown };
+  "memory:saved": { ok: boolean };
+  "telemetry:sent": { eventName: string };
+  "action:proposed": { action: ClickyProposedAction };
+  "action:confirmed": { action: ClickyProposedAction };
+  "action:executed": { action: ClickyProposedAction; result: ClickyActionResult };
+  "action:failed": { action?: ClickyProposedAction; error: Error };
+  error: { error: Error };
+};
+
+export type ClickyEventName = keyof ClickyEventMap;
+export type ClickyEventHandler<EventName extends ClickyEventName> = (payload: ClickyEventMap[EventName]) => void;
+
+export type ClickyClientPublic = {
+  open(): void;
+  close(): void;
+  destroy(): Promise<void>;
+  startPushToTalk(): Promise<void>;
+  stopPushToTalk(): Promise<void>;
+  sendUserText(text: string): Promise<void>;
+  healthCheck(): Promise<ClickyHealthReport>;
+  startTask(options: ClickyTaskOptions): Promise<void>;
+  endTask(): void;
+  getDiagnostics(): ClickyDiagnostics;
+  captureContext(): Promise<ClickyCapturedContext>;
+  registerAction(actionDefinition: ClickyActionDefinition): void;
+  unregisterAction(actionId: string): void;
+  registerSemanticProvider(provider: ClickySemanticProvider): void;
+  on<EventName extends ClickyEventName>(eventName: EventName, handler: ClickyEventHandler<EventName>): () => void;
+};
+**********************
+PowerShell transcript end
+End time: 20260607135232
+**********************

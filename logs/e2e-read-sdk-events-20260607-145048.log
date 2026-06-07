@@ -1,0 +1,352 @@
+**********************
+PowerShell transcript start
+Start time: 20260607145048
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $logDir = Join-Path 'C:\Users\jadha\clicky.ai' 'logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $logPath = Join-Path $logDir "e2e-read-sdk-events-$timestamp.log"; Start-Transcript -Path $logPath -Force | Out-Null; Write-Host "LOG_PATH=$logPath"; Select-String -Path .\src\core\ClickyClient.ts,.\src\core\GuideModeRuntime.ts,.\src\overlay\CursorOverlay.ts,.\src\overlay\TargetLock.ts,.\src\core\types.ts -Pattern "emit\(|startGuide|stepCompleted|captureScreenshot|cursor|guide|screenshot|mic:" -Context 1,1; Stop-Transcript | Out-Null
+Process ID: 1860
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+LOG_PATH=C:\Users\jadha\clicky.ai\logs\e2e-read-sdk-events-20260607-145048.log
+
+  src\core\ClickyClient.ts:16:import { ElementRegistry } from "../context/ElementRegistry";
+> src\core\ClickyClient.ts:17:import { ScreenshotCapture } from "../context/ScreenshotCapture";
+  src\core\ClickyClient.ts:18:import { SemanticMapObserver } from "../context/SemanticMapObserver";
+  src\core\ClickyClient.ts:23:import { EventBus } from "./EventBus";
+> src\core\ClickyClient.ts:24:import { GuideModeRuntime } from "./GuideModeRuntime";
+  src\core\ClickyClient.ts:25:import { Lifecycle } from "./Lifecycle";
+  src\core\ClickyClient.ts:32:  ClickyCapturedContext,
+> src\core\ClickyClient.ts:33:  ClickyScreenshot,
+  src\core\ClickyClient.ts:34:  ClickyClientPublic,
+  src\core\ClickyClient.ts:66:  private readonly actionPlanner: ActionPlanner;
+> src\core\ClickyClient.ts:67:  private readonly guideModeRuntime: GuideModeRuntime;
+  src\core\ClickyClient.ts:68:  private readonly localGuidanceEngine = new LocalGuidanceEngine();
+  src\core\ClickyClient.ts:69:  private readonly micCapture = new MicCapture();
+> src\core\ClickyClient.ts:70:  private readonly screenshotCapture = new ScreenshotCapture();
+  src\core\ClickyClient.ts:71:  private readonly semanticMapObserver: SemanticMapObserver;
+  src\core\ClickyClient.ts:84:  private readonly degradedProviders: Record<string, string> = {};
+> src\core\ClickyClient.ts:85:  private pendingScreenshot?: ClickyScreenshot;
+  src\core\ClickyClient.ts:86:  private taskStartedAt?: number;
+  src\core\ClickyClient.ts:117:    this.overlayRoot = new OverlayRoot(this.options, this.elementRegistry, (reason) =>
+this.handleTargetLost(reason));
+> src\core\ClickyClient.ts:118:    this.guideModeRuntime = new GuideModeRuntime({
+  src\core\ClickyClient.ts:119:      contextCollector: this.contextCollector,
+  src\core\ClickyClient.ts:137:      onDismissOnboarding: () => this.dismissOnboarding(),
+> src\core\ClickyClient.ts:138:      onCaptureScreenshot: () => void this.captureScreenshotForNextRequest()
+  src\core\ClickyClient.ts:139:    });
+  src\core\ClickyClient.ts:179:      this.stateMachine.setState("listening");
+> src\core\ClickyClient.ts:180:      this.eventBus.emit("mic:start", undefined);
+  src\core\ClickyClient.ts:181:      this.micStartedAt = performance.now();
+  src\core\ClickyClient.ts:224:    this.isStreamingSttReady = false;
+> src\core\ClickyClient.ts:225:    this.eventBus.emit("mic:stop", undefined);
+  src\core\ClickyClient.ts:226:    this.logStage("mic.capture.stopped", {
+  src\core\ClickyClient.ts:272:    }
+> src\core\ClickyClient.ts:273:    this.eventBus.emit("mic:level", { level: Math.min(1, audioLevel * 12) });
+  src\core\ClickyClient.ts:274:    if (this.silentAudioStartedAt && performance.now() - this.silentAudioStartedAt > 
+3000) {
+> src\core\ClickyClient.ts:275:      this.eventBus.emit("mic:silent", { durationMs: Math.round(performance.now() - 
+this.silentAudioStartedAt) });
+  src\core\ClickyClient.ts:276:      this.silentAudioStartedAt = performance.now();
+  src\core\ClickyClient.ts:341:    this.latestHealth = health;
+> src\core\ClickyClient.ts:342:    this.eventBus.emit("health:changed", { health });
+  src\core\ClickyClient.ts:343:    if (!health.ok) {
+  src\core\ClickyClient.ts:358:    if (this.options.transientMode) {
+> src\core\ClickyClient.ts:359:      this.overlayRoot.cursorOverlay.showTransient();
+  src\core\ClickyClient.ts:360:    }
+  src\core\ClickyClient.ts:362:    this.semanticMapObserver.start();
+> src\core\ClickyClient.ts:363:    this.eventBus.emit("task:started", { taskId: this.activeTaskId, inputMode: 
+options.inputMode });
+  src\core\ClickyClient.ts:364:    void this.captureTelemetry("task_started", { inputMode: options.inputMode, taskId: 
+this.activeTaskId });
+  src\core\ClickyClient.ts:375:
+> src\core\ClickyClient.ts:376:  async startGuide(goal: string): Promise<void> {
+  src\core\ClickyClient.ts:377:    const normalizedGoal = goal.trim();
+  src\core\ClickyClient.ts:382:    try {
+> src\core\ClickyClient.ts:383:      await this.guideModeRuntime.start(normalizedGoal);
+  src\core\ClickyClient.ts:384:    } catch (error) {
+  src\core\ClickyClient.ts:388:
+> src\core\ClickyClient.ts:389:  stepCompleted(): void {
+> src\core\ClickyClient.ts:390:    this.guideModeRuntime.stepCompleted();
+  src\core\ClickyClient.ts:391:  }
+  src\core\ClickyClient.ts:392:
+> src\core\ClickyClient.ts:393:  cancelGuide(): void {
+> src\core\ClickyClient.ts:394:    this.guideModeRuntime.cancel();
+> src\core\ClickyClient.ts:395:    if (this.stateMachine.getState().startsWith("guide-")) {
+  src\core\ClickyClient.ts:396:      this.stateMachine.setState("idle");
+  src\core\ClickyClient.ts:449:      const context = await this.contextCollector.capture();
+> src\core\ClickyClient.ts:450:      await this.claudeClient.planGuide("find the search bar", context);
+  src\core\ClickyClient.ts:451:    });
+  src\core\ClickyClient.ts:468:
+> src\core\ClickyClient.ts:469:  async captureScreenshotForNextRequest(): Promise<void> {
+> src\core\ClickyClient.ts:470:    if (this.options.screenshotMode === "off") {
+> src\core\ClickyClient.ts:471:      this.panelRoot.companionPanel.appendMessage("assistant", "screenshot mode is off 
+for this app.");
+  src\core\ClickyClient.ts:472:      return;
+  src\core\ClickyClient.ts:475:    try {
+> src\core\ClickyClient.ts:476:      this.pendingScreenshot = await this.screenshotCapture.captureStill();
+> src\core\ClickyClient.ts:477:      this.panelRoot.companionPanel.showScreenshotPreview(this.pendingScreenshot.width, 
+this.pendingScreenshot.height);
+> src\core\ClickyClient.ts:478:      this.eventBus.emit("screenshot:captured", { screenshot: this.pendingScreenshot });
+  src\core\ClickyClient.ts:479:    } catch (error) {
+  src\core\ClickyClient.ts:481:        "assistant",
+> src\core\ClickyClient.ts:482:        `screenshot capture was not attached: ${error instanceof Error ? error.message 
+: String(error)}`
+  src\core\ClickyClient.ts:483:      );
+  src\core\ClickyClient.ts:494:    this.semanticMapObserver.stop();
+> src\core\ClickyClient.ts:495:    this.eventBus.emit("task:ended", { taskId, reason });
+  src\core\ClickyClient.ts:496:    void this.captureTelemetry("task_ended", { taskId, reason });
+  src\core\ClickyClient.ts:520:    const context = await this.contextCollector.capture();
+> src\core\ClickyClient.ts:521:    this.eventBus.emit("context:captured", { context });
+  src\core\ClickyClient.ts:522:    return context;
+  src\core\ClickyClient.ts:553:      const capturedContext = await this.contextCollector.capture({
+> src\core\ClickyClient.ts:554:        includeScreenshot: this.options.enableScreenshots && this.options.contextMode 
+=== "screenshot-first"
+  src\core\ClickyClient.ts:555:      });
+> src\core\ClickyClient.ts:556:      if (this.pendingScreenshot) {
+> src\core\ClickyClient.ts:557:        capturedContext.screenshots.push(this.pendingScreenshot);
+> src\core\ClickyClient.ts:558:        this.pendingScreenshot = undefined;
+> src\core\ClickyClient.ts:559:        this.panelRoot.companionPanel.clearScreenshotPreview();
+  src\core\ClickyClient.ts:560:      }
+  src\core\ClickyClient.ts:561:      await this.applySemanticProviders(capturedContext);
+> src\core\ClickyClient.ts:562:      this.eventBus.emit("context:captured", { context: capturedContext });
+  src\core\ClickyClient.ts:563:
+  src\core\ClickyClient.ts:573:      }
+> src\core\ClickyClient.ts:574:      this.eventBus.emit("assistant:done", {
+  src\core\ClickyClient.ts:575:        text: rawAssistantText,
+  src\core\ClickyClient.ts:577:      });
+> src\core\ClickyClient.ts:578:      this.eventBus.emit("overlay:point", { command: cleanedResponse.pointCommand });
+  src\core\ClickyClient.ts:579:      this.lastTarget = cleanedResponse.pointCommand;
+  src\core\ClickyClient.ts:581:      if (didPoint) {
+> src\core\ClickyClient.ts:582:        this.eventBus.emit("cursor:targeted", { command: cleanedResponse.pointCommand 
+});
+  src\core\ClickyClient.ts:583:      } else if (cleanedResponse.pointCommand.type !== "none") {
+> src\core\ClickyClient.ts:584:        this.eventBus.emit("cursor:missed", { command: cleanedResponse.pointCommand, 
+reason: "target not found" });
+  src\core\ClickyClient.ts:585:      }
+  src\core\ClickyClient.ts:653:        })),
+> src\core\ClickyClient.ts:654:        onToken: (token, fullText) => this.eventBus.emit("assistant:token", { token, 
+fullText })
+  src\core\ClickyClient.ts:655:      });
+  src\core\ClickyClient.ts:668:      );
+> src\core\ClickyClient.ts:669:      this.eventBus.emit("assistant:token", { token: fallbackText, fullText: 
+fallbackText });
+  src\core\ClickyClient.ts:670:      return fallbackText;
+  src\core\ClickyClient.ts:690:        });
+> src\core\ClickyClient.ts:691:        this.eventBus.emit("transcript:final", { text: uploadResult.transcript });
+  src\core\ClickyClient.ts:692:      } else {
+  src\core\ClickyClient.ts:705:  private pointAtCommand(pointCommand: ClickyPointCommand, capturedContext:
+ClickyCapturedContext): boolean {
+> src\core\ClickyClient.ts:706:    const didPoint = this.overlayRoot.cursorOverlay.point(pointCommand);
+  src\core\ClickyClient.ts:707:    if (didPoint || pointCommand.type !== "element") {
+  src\core\ClickyClient.ts:717:    if (liveElementFromSelector) {
+> src\core\ClickyClient.ts:718:      this.overlayRoot.cursorOverlay.pointAtElement(liveElementFromSelector, 
+pointCommand.label || capturedElement.label);
+  src\core\ClickyClient.ts:719:      return true;
+  src\core\ClickyClient.ts:721:
+> src\core\ClickyClient.ts:722:    return this.overlayRoot.cursorOverlay.point({
+  src\core\ClickyClient.ts:723:      type: "coordinate",
+  src\core\ClickyClient.ts:750:  private handleTargetLost(reason: string): void {
+> src\core\ClickyClient.ts:751:    this.logStage("cursor.target_lost", { reason, lastTarget: this.lastTarget });
+> src\core\ClickyClient.ts:752:    this.eventBus.emit("cursor:target-lost", { reason, lastTarget: this.lastTarget });
+  src\core\ClickyClient.ts:753:  }
+  src\core\ClickyClient.ts:756:    if (this.options.transientMode) {
+> src\core\ClickyClient.ts:757:      this.overlayRoot.cursorOverlay.scheduleHide();
+  src\core\ClickyClient.ts:758:    }
+  src\core\ClickyClient.ts:788:    const semanticMapVersion = this.contextCollector.markDomChanged();
+> src\core\ClickyClient.ts:789:    this.eventBus.emit("dom:changed", { semanticMapVersion });
+  src\core\ClickyClient.ts:790:
+  src\core\ClickyClient.ts:796:    await this.applySemanticProviders(context);
+> src\core\ClickyClient.ts:797:    this.eventBus.emit("semantic-map:updated", { context });
+  src\core\ClickyClient.ts:798:  }
+  src\core\ClickyClient.ts:811:      }
+> src\core\ClickyClient.ts:812:      this.eventBus.emit("memory:loaded", { value: memory });
+  src\core\ClickyClient.ts:813:    } catch (error) {
+  src\core\ClickyClient.ts:820:      await this.memoryClient.save(this.conversationHistory);
+> src\core\ClickyClient.ts:821:      this.eventBus.emit("memory:saved", { ok: true });
+  src\core\ClickyClient.ts:822:    } catch (error) {
+  src\core\ClickyClient.ts:829:      await this.telemetryClient.capture(eventName, properties);
+> src\core\ClickyClient.ts:830:      this.eventBus.emit("telemetry:sent", { eventName });
+  src\core\ClickyClient.ts:831:    } catch (error) {
+  src\core\ClickyClient.ts:837:    this.degradedProviders[provider] = reason;
+> src\core\ClickyClient.ts:838:    this.eventBus.emit("provider:degraded", { provider, reason });
+  src\core\ClickyClient.ts:839:  }
+  src\core\ClickyClient.ts:843:      delete this.degradedProviders[provider];
+> src\core\ClickyClient.ts:844:      this.eventBus.emit("provider:recovered", { provider });
+  src\core\ClickyClient.ts:845:    }
+  src\core\ClickyClient.ts:849:    this.providerManager.setActiveProvider(capability, provider);
+> src\core\ClickyClient.ts:850:    this.eventBus.emit("provider:switched", { capability, provider, reason });
+  src\core\ClickyClient.ts:851:  }
+  src\core\ClickyClient.ts:943:    this.logStage("error", { message: normalizedError.message });
+> src\core\ClickyClient.ts:944:    this.eventBus.emit("error", { error: normalizedError });
+  src\core\ClickyClient.ts:945:    this.panelRoot.companionPanel.appendMessage("assistant", normalizedError.message);
+  src\core\ClickyClient.ts:965:    this.logStage("voice.capture.error", { message, name: normalizedError.name });
+> src\core\ClickyClient.ts:966:    this.eventBus.emit("error", { error: new Error(message) });
+  src\core\ClickyClient.ts:967:    this.panelRoot.companionPanel.appendMessage("assistant", message);
+  src\core\GuideModeRuntime.ts:7:import { StateMachine } from "./StateMachine";
+> src\core\GuideModeRuntime.ts:8:import type { ClickyCapturedContext, ClickyGuideStep } from "./types";
+  src\core\GuideModeRuntime.ts:9:
+> src\core\GuideModeRuntime.ts:10:export type GuideModeRuntimeOptions = {
+  src\core\GuideModeRuntime.ts:11:  contextCollector: ContextCollector;
+  src\core\GuideModeRuntime.ts:21:
+> src\core\GuideModeRuntime.ts:22:export class GuideModeRuntime {
+  src\core\GuideModeRuntime.ts:23:  private activeGoal?: string;
+> src\core\GuideModeRuntime.ts:24:  private activeSteps: ClickyGuideStep[] = [];
+  src\core\GuideModeRuntime.ts:25:  private cancelled = false;
+> src\core\GuideModeRuntime.ts:26:  private stepCompletedResolver?: () => void;
+  src\core\GuideModeRuntime.ts:27:
+> src\core\GuideModeRuntime.ts:28:  constructor(private readonly options: GuideModeRuntimeOptions) {}
+  src\core\GuideModeRuntime.ts:29:
+  src\core\GuideModeRuntime.ts:33:    this.activeGoal = goal;
+> src\core\GuideModeRuntime.ts:34:    this.options.stateMachine.setState("guide-planning");
+> src\core\GuideModeRuntime.ts:35:    this.options.eventBus.emit("guide:started", { goal });
+  src\core\GuideModeRuntime.ts:36:
+  src\core\GuideModeRuntime.ts:37:    const planningContext = await this.captureContext();
+> src\core\GuideModeRuntime.ts:38:    this.activeSteps = await this.options.claudeClient.planGuide(goal, 
+planningContext);
+> src\core\GuideModeRuntime.ts:39:    this.options.eventBus.emit("guide:planned", { goal, steps: this.activeSteps });
+  src\core\GuideModeRuntime.ts:40:
+  src\core\GuideModeRuntime.ts:48:      if (!didCompleteStep) {
+> src\core\GuideModeRuntime.ts:49:        this.options.stateMachine.setState("guide-blocked");
+> src\core\GuideModeRuntime.ts:50:        this.options.eventBus.emit("guide:blocked", {
+  src\core\GuideModeRuntime.ts:51:          goal,
+  src\core\GuideModeRuntime.ts:58:
+> src\core\GuideModeRuntime.ts:59:    this.options.stateMachine.setState("guide-completed");
+> src\core\GuideModeRuntime.ts:60:    this.options.eventBus.emit("guide:completed", { goal, steps: this.activeSteps });
+  src\core\GuideModeRuntime.ts:61:    this.options.appendAssistantMessage("done, the workflow is complete.");
+  src\core\GuideModeRuntime.ts:66:
+> src\core\GuideModeRuntime.ts:67:  stepCompleted(): void {
+> src\core\GuideModeRuntime.ts:68:    this.stepCompletedResolver?.();
+> src\core\GuideModeRuntime.ts:69:    this.stepCompletedResolver = undefined;
+  src\core\GuideModeRuntime.ts:70:  }
+  src\core\GuideModeRuntime.ts:73:    this.cancelled = true;
+> src\core\GuideModeRuntime.ts:74:    this.stepCompleted();
+  src\core\GuideModeRuntime.ts:75:    this.activeGoal = undefined;
+  src\core\GuideModeRuntime.ts:80:    goal: string,
+> src\core\GuideModeRuntime.ts:81:    step: ClickyGuideStep,
+  src\core\GuideModeRuntime.ts:82:    stepIndex: number,
+  src\core\GuideModeRuntime.ts:89:
+> src\core\GuideModeRuntime.ts:90:      this.options.stateMachine.setState(recoveryAttempt === 0 ? "guide-step-active" 
+: "guide-recovering");
+  src\core\GuideModeRuntime.ts:91:      if (recoveryAttempt > 0) {
+> src\core\GuideModeRuntime.ts:92:        this.options.eventBus.emit("guide:recovery", { step, attempt: 
+recoveryAttempt });
+  src\core\GuideModeRuntime.ts:93:      } else {
+> src\core\GuideModeRuntime.ts:94:        this.options.eventBus.emit("guide:step-started", { step, stepIndex, 
+totalSteps });
+  src\core\GuideModeRuntime.ts:95:      }
+  src\core\GuideModeRuntime.ts:97:      const context = await this.captureContext();
+> src\core\GuideModeRuntime.ts:98:      const rawGuidance = await this.options.claudeClient.createGuideStepResponse({
+  src\core\GuideModeRuntime.ts:99:        goal,
+  src\core\GuideModeRuntime.ts:107:      this.options.appendAssistantMessage(cleanedGuidance.spokenText);
+> src\core\GuideModeRuntime.ts:108:      this.options.overlayRoot.cursorOverlay.point(cleanedGuidance.pointCommand);
+  src\core\GuideModeRuntime.ts:109:
+  src\core\GuideModeRuntime.ts:113:
+> src\core\GuideModeRuntime.ts:114:      this.options.stateMachine.setState("guide-step-watching");
+  src\core\GuideModeRuntime.ts:115:      const completed = await this.waitForStepCompletion();
+  src\core\GuideModeRuntime.ts:116:      if (completed) {
+> src\core\GuideModeRuntime.ts:117:        this.options.eventBus.emit("guide:step-completed", { step });
+  src\core\GuideModeRuntime.ts:118:        return true;
+  src\core\GuideModeRuntime.ts:127:    await this.options.applySemanticProviders(context);
+> src\core\GuideModeRuntime.ts:128:    this.options.eventBus.emit("context:captured", { context });
+  src\core\GuideModeRuntime.ts:129:    return context;
+  src\core\GuideModeRuntime.ts:134:      const timeoutId = window.setTimeout(() => {
+> src\core\GuideModeRuntime.ts:135:        this.stepCompletedResolver = undefined;
+  src\core\GuideModeRuntime.ts:136:        resolve(false);
+  src\core\GuideModeRuntime.ts:138:
+> src\core\GuideModeRuntime.ts:139:      this.stepCompletedResolver = () => {
+  src\core\GuideModeRuntime.ts:140:        window.clearTimeout(timeoutId);
+  src\overlay\CursorOverlay.ts:2:import { ElementRegistry } from "../context/ElementRegistry";
+> src\overlay\CursorOverlay.ts:3:import { CursorAnimator } from "./CursorAnimator";
+  src\overlay\CursorOverlay.ts:4:import { ElementHighlighter } from "./ElementHighlighter";
+  src\overlay\CursorOverlay.ts:6:
+> src\overlay\CursorOverlay.ts:7:export class CursorOverlay {
+> src\overlay\CursorOverlay.ts:8:  private readonly animator: CursorAnimator;
+  src\overlay\CursorOverlay.ts:9:  private readonly highlighter: ElementHighlighter;
+  src\overlay\CursorOverlay.ts:18:  ) {
+> src\overlay\CursorOverlay.ts:19:    const cursorElement = document.createElement("div");
+> src\overlay\CursorOverlay.ts:20:    cursorElement.className = "clicky-cursor";
+  src\overlay\CursorOverlay.ts:21:    const bubbleElement = document.createElement("div");
+  src\overlay\CursorOverlay.ts:22:    bubbleElement.className = "clicky-response-bubble";
+> src\overlay\CursorOverlay.ts:23:    this.rootElement.append(cursorElement, bubbleElement);
+> src\overlay\CursorOverlay.ts:24:    this.animator = new CursorAnimator(cursorElement, bubbleElement);
+  src\overlay\CursorOverlay.ts:25:    this.highlighter = new ElementHighlighter(rootElement);
+  src\core\types.ts:9:  | "executing-action"
+> src\core\types.ts:10:  | "guide-planning"
+> src\core\types.ts:11:  | "guide-step-active"
+> src\core\types.ts:12:  | "guide-step-watching"
+> src\core\types.ts:13:  | "guide-recovering"
+> src\core\types.ts:14:  | "guide-completed"
+> src\core\types.ts:15:  | "guide-blocked"
+  src\core\types.ts:16:  | "error";
+  src\core\types.ts:17:
+> src\core\types.ts:18:export type ClickyContextMode = "dom-first" | "dom-only" | "screenshot-first";
+> src\core\types.ts:19:export type ClickyScreenshotMode = "off" | "user-triggered";
+  src\core\types.ts:20:export type ClickyActionMode = "disabled" | "confirm-before-execute" | 
+"execute-registered-actions";
+  src\core\types.ts:69:  enableTTS?: boolean;
+> src\core\types.ts:70:  enableScreenshots?: boolean;
+  src\core\types.ts:71:  telemetryEnabled?: boolean;
+  src\core\types.ts:78:  transientMode?: boolean;
+> src\core\types.ts:79:  screenshotMode?: ClickyScreenshotMode;
+  src\core\types.ts:80:  realtimeMode?: ClickyRealtimeMode;
+  src\core\types.ts:101:    | "enableTTS"
+> src\core\types.ts:102:    | "enableScreenshots"
+  src\core\types.ts:103:    | "telemetryEnabled"
+  src\core\types.ts:110:    | "transientMode"
+> src\core\types.ts:111:    | "screenshotMode"
+  src\core\types.ts:112:    | "realtimeMode"
+  src\core\types.ts:161:
+> src\core\types.ts:162:export type ClickyScreenshot = {
+  src\core\types.ts:163:  mimeType: "image/png" | "image/jpeg";
+  src\core\types.ts:186:  semanticGraph: ClickySemanticNode[];
+> src\core\types.ts:187:  screenshots: ClickyScreenshot[];
+  src\core\types.ts:188:  capturedAt: string;
+  src\core\types.ts:228:
+> src\core\types.ts:229:export type ClickyGuideStep = {
+  src\core\types.ts:230:  stepId: string;
+  src\core\types.ts:293:  "state:changed": { previousState: ClickyState; nextState: ClickyState };
+> src\core\types.ts:294:  "mic:start": undefined;
+> src\core\types.ts:295:  "mic:stop": undefined;
+> src\core\types.ts:296:  "mic:level": { level: number };
+> src\core\types.ts:297:  "mic:silent": { durationMs: number };
+  src\core\types.ts:298:  "transcript:partial": { text: string };
+  src\core\types.ts:300:  "context:captured": { context: ClickyCapturedContext };
+> src\core\types.ts:301:  "screenshot:captured": { screenshot: ClickyScreenshot };
+  src\core\types.ts:302:  "health:changed": { health: ClickyHealthReport };
+  src\core\types.ts:304:  "task:ended": { taskId: string; reason: "completed" | "cancelled" | "error" };
+> src\core\types.ts:305:  "guide:started": { goal: string };
+> src\core\types.ts:306:  "guide:planned": { goal: string; steps: ClickyGuideStep[] };
+> src\core\types.ts:307:  "guide:step-started": { step: ClickyGuideStep; stepIndex: number; totalSteps: number };
+> src\core\types.ts:308:  "guide:step-completed": { step: ClickyGuideStep };
+> src\core\types.ts:309:  "guide:recovery": { step: ClickyGuideStep; attempt: number };
+> src\core\types.ts:310:  "guide:completed": { goal: string; steps: ClickyGuideStep[] };
+> src\core\types.ts:311:  "guide:blocked": { goal: string; step?: ClickyGuideStep; reason: string };
+  src\core\types.ts:312:  "dom:changed": { semanticMapVersion: number };
+  src\core\types.ts:318:  "overlay:point": { command: ClickyPointCommand };
+> src\core\types.ts:319:  "cursor:targeted": { command: ClickyPointCommand };
+> src\core\types.ts:320:  "cursor:missed": { command: ClickyPointCommand; reason: string };
+> src\core\types.ts:321:  "cursor:target-lost": { reason: string; lastTarget?: ClickyPointCommand };
+  src\core\types.ts:322:  "provider:degraded": { provider: string; reason: string };
+  src\core\types.ts:341:  showOnboarding(): void;
+> src\core\types.ts:342:  captureScreenshotForNextRequest(): Promise<void>;
+  src\core\types.ts:343:  destroy(): Promise<void>;
+  src\core\types.ts:348:  startTask(options: ClickyTaskOptions): Promise<void>;
+> src\core\types.ts:349:  startGuide(goal: string): Promise<void>;
+> src\core\types.ts:350:  stepCompleted(): void;
+> src\core\types.ts:351:  cancelGuide(): void;
+  src\core\types.ts:352:  updateSettings(settings: ClickyRuntimeSettings): void;
+**********************
+PowerShell transcript end
+End time: 20260607145048
+**********************

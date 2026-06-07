@@ -1,0 +1,46 @@
+**********************
+PowerShell transcript start
+Start time: 20260607133633
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $logDir = Join-Path 'C:\Users\jadha\clicky.ai' 'logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $logPath = Join-Path $logDir "gap-upstream-clone-$timestamp.log"; Start-Transcript -Path $logPath -Force | Out-Null; Write-Host "LOG_PATH=$logPath"; $target = Join-Path $env:TEMP 'clicky-upstream-gap'; if (Test-Path $target) { git -C $target fetch --depth=1 origin main; git -C $target reset --hard origin/main } else { git clone --depth=1 https://github.com/farzaa/clicky.git $target }; git -C $target rev-parse HEAD; Get-ChildItem $target; Stop-Transcript | Out-Null
+Process ID: 11512
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+LOG_PATH=C:\Users\jadha\clicky.ai\logs\gap-upstream-clone-20260607-133633.log
+
+
+
+    Directory: C:\Users\jadha\AppData\Local\Temp\clicky-upstream-gap
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          07-06-2026 01:36 PM                leanring-buddy
+d----          07-06-2026 01:36 PM                leanring-buddy.xcodeproj
+d----          07-06-2026 01:36 PM                leanring-buddyTests
+d----          07-06-2026 01:36 PM                leanring-buddyUITests
+d----          07-06-2026 01:36 PM                scripts
+d----          07-06-2026 01:36 PM                worker
+-a---          07-06-2026 01:36 PM            110 .gitignore
+-a---          07-06-2026 01:36 PM          13210 AGENTS.md
+-a---          07-06-2026 01:36 PM           2060 appcast.xml
+-a---          07-06-2026 01:36 PM              9 CLAUDE.md
+-a---          07-06-2026 01:36 PM        2368861 clicky-demo.gif
+-a---          07-06-2026 01:36 PM           2484 dmg-background.png
+-a---          07-06-2026 01:36 PM           1083 LICENSE
+-a---          07-06-2026 01:36 PM           6236 README.md
+**********************
+PowerShell transcript end
+End time: 20260607133636
+**********************

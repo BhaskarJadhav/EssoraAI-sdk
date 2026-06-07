@@ -1,0 +1,484 @@
+**********************
+PowerShell transcript start
+Start time: 20260607135151
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $logDir = Join-Path 'C:\Users\jadha\clicky.ai' 'logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $logPath = Join-Path $logDir "attachment-request-$timestamp.log"; Start-Transcript -Path $logPath -Force | Out-Null; Write-Host "LOG_PATH=$logPath"; Get-Content -LiteralPath 'C:\Users\jadha\.codex\attachments\6cb09aab-0225-4629-9e5a-1cbd11d91729\pasted-text.txt' -Raw; Stop-Transcript | Out-Null
+Process ID: 22672
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+LOG_PATH=C:\Users\jadha\clicky.ai\logs\attachment-request-20260607-135151.log
+# Codex Agent — Essora Web SDK: Build Browser-Native Clicky Companion
+
+## Context
+We are building a Web SDK called Essora that brings the Clicky macOS companion 
+experience into the browser — for guiding users through complex SaaS apps.
+
+Clicky (https://github.com/farzaa/clicky) is the reference implementation:
+- Push-to-talk voice input
+- Real-time screen capture + Claude vision
+- AI response with [POINT:x,y:label] coordinate tags
+- Blue cursor flies to the exact UI element via bezier animation
+- ElevenLabs speaks the reply aloud
+- 10-turn conversation memory
+- Cloudflare Worker proxy protecting all API keys
+
+Our SDK already has the backend skeleton. The gap is the EXPERIENCE LAYER —
+the part the user actually sees and feels. That is what you are building.
+
+Read the full gap report below before writing a single line of code.
+Read our codebase first. Understand every existing file before touching anything.
+
+---
+
+## Step 0 — Read before you write
+
+Read these files in our SDK first:
+- src/core/ClickyClient.ts
+- src/core/StateMachine.ts
+- src/overlay/CursorOverlay.ts
+- src/overlay/CursorAnimator.ts
+- src/overlay/ElementHighlighter.ts
+- src/overlay/OverlayRoot.ts
+- src/overlay/ResponseBubble.ts
+- src/parsing/PointTagParser.ts
+- src/parsing/ResponseCleaner.ts
+- src/context/ContextCollector.ts
+- src/context/DomSnapshot.ts
+- src/context/AccessibilitySnapshot.ts
+- src/context/ElementRegistry.ts
+- src/context/SemanticMapObserver.ts
+- src/panel/CompanionPanel.ts
+- src/panel/PanelRoot.ts
+- src/panel/MicButton.ts
+- src/audio/MicCapture.ts
+- src/api/ClaudeClient.ts
+- src/api/WorkerProxy.ts
+- src/api/ElevenLabsClient.ts
+- src/core/types.ts
+- src/core/Config.ts
+
+Then read from Clicky repo (clone https://github.com/farzaa/clicky):
+- AGENTS.md
+- leanring-buddy/OverlayWindow.swift        ← cursor animation source of truth
+- leanring-buddy/CompanionManager.swift     ← state machine source of truth
+- leanring-buddy/BuddyDictationManager.swift
+- leanring-buddy/ElementLocationDetector.swift
+- leanring-buddy/CompanionPanelView.swift
+- worker/src/index.ts
+
+Do not implement anything until you have read all of the above.
+
+---
+
+## Build Plan — Ordered by Priority
+
+Work through these tasks in order. Do not skip ahead.
+Complete each task fully before starting the next.
+After each task, run the existing tests and fix any regressions.
+
+---
+
+### TASK 1 — Clicky-feel cursor animation
+**Goal:** Port Clicky's bezier flight + rotation + pulse into CursorAnimator.ts
+
+Reference: OverlayWindow.swift — the bezier arc, tangent rotation, scale pulse
+
+Build:
+1. In CursorAnimator.ts, implement quadratic bezier path between current 
+   cursor position and target position. Midpoint should lift upward 
+   (arc height = distance * 0.4, clamped to 120px max).
+2. Each animation frame: compute tangent direction, rotate cursor triangle 
+   to face travel direction.
+3. At mid-flight (t=0.5): scale cursor up to 1.4x. At arrival: scale back 
+   to 1.0x.
+4. On arrival: switch to "pointing mode" — cursor bobs gently (±4px, 1.2s 
+   ease-in-out loop) while response bubble is visible.
+5. After TTS completes + 1000ms inactivity: fade cursor out (opacity 0, 
+   300ms ease). This is "transient mode" — matches Clicky's 
+   Show/Hide Clicky behavior.
+6. Animation must be driven by requestAnimationFrame. No CSS transitions 
+   for the flight path — JS only.
+7. All animations must respect prefers-reduced-motion: if set, skip to 
+   final position immediately, no flight.
+
+Files to modify: src/overlay/CursorAnimator.ts, src/overlay/CursorOverlay.ts
+New file: none
+
+Acceptance criteria:
+- Cursor flies in a visible arc from its current position to the target element
+- Triangle rotates to face direction of travel each frame
+- Cursor scales up at mid-flight and pulses gently at arrival
+- Cursor fades out after TTS ends + 1s inactivity
+- prefers-reduced-motion skips flight entirely
+
+---
+
+### TASK 2 — Target lock engine
+**Goal:** Cursor stays on target element through scroll, resize, route change
+
+Build:
+1. Create src/overlay/TargetLock.ts
+2. TargetLock takes a target element reference and a callback 
+   onBoundsChanged(rect: DOMRect).
+3. Use ResizeObserver on the target element.
+4. Use IntersectionObserver to detect when target scrolls out of view 
+   — when out of view, emit onTargetLost().
+5. On scroll events (window + all scrollable ancestors up the DOM tree): 
+   recompute getBoundingClientRect() and call onBoundsChanged.
+6. On window resize: recompute and call onBoundsChanged.
+7. On route change (History API patch — pushState, replaceState, popstate): 
+   attempt to re-find the target by its stable ID from ElementRegistry. 
+   If found: re-lock. If not found after 2000ms: emit onTargetLost().
+8. Expose: lock(element), unlock(), isLocked(), currentRect().
+
+Integrate into ElementHighlighter.ts:
+- When a point target is set, call TargetLock.lock(element)
+- On onBoundsChanged: move highlight rect via transform (not left/top)
+- On onTargetLost: show "lost target" visual state on highlight, 
+  emit event to ClickyClient so it can re-ask AI for new target
+
+Files: create src/overlay/TargetLock.ts, modify src/overlay/ElementHighlighter.ts,
+       modify src/core/ClickyClient.ts (handle onTargetLost event)
+
+Acceptance criteria:
+- Highlight follows element while user scrolls the page
+- Highlight updates when viewport resizes
+- On route change, highlight re-attaches or fires onTargetLost
+- Drift under 4 CSS pixels during scroll at 60fps
+
+---
+
+### TASK 3 — Semantic UI graph
+**Goal:** Give the AI a rich, structured description of every interactive 
+element on the page so it can choose the right target without hardcoded selectors
+
+Build:
+1. Create src/context/SemanticGraph.ts
+2. SemanticGraph.build() walks the DOM and returns a JSON array of nodes.
+   Each node must include:
+   - stableId: string (deterministic — role+name+region, no random)
+   - role: string (from aria-role or inferred from tag)
+   - name: string (aria-label > aria-labelledby > visible text > placeholder)
+   - state: { disabled, hidden, checked, expanded, selected, required }
+   - region: string (nearest landmark or section heading text)
+   - formGroup: string | null (nearest form label or fieldset legend)
+   - bounds: { x, y, width, height, visible: boolean }
+   - tagName: string
+   - interactable: boolean (can receive click/focus)
+3. Filter out: hidden elements, elements with opacity 0, 
+   elements outside viewport by more than 2 viewport heights,
+   elements matched by Redaction.ts rules.
+4. Max 120 nodes per snapshot. If more: keep all interactable elements 
+   first, then trim non-interactable by distance from viewport center.
+5. MutationObserver watch: rebuild graph on DOM mutations, debounced 300ms.
+6. Expose as ContextCollector plugin — ContextCollector.ts should call 
+   SemanticGraph.build() and include output in context sent to AI.
+
+Files: create src/context/SemanticGraph.ts, 
+       modify src/context/ContextCollector.ts,
+       modify src/context/ElementRegistry.ts (use stableId as key)
+
+Acceptance criteria:
+- Graph includes all buttons, inputs, links, selects visible on page
+- stableId is identical across two calls when DOM has not changed
+- Redacted fields (password, data-clicky-ignore) are not in graph
+- Graph rebuilds within 400ms of a route change
+
+---
+
+### TASK 4 — Guide Mode runtime
+**Goal:** Multi-step workflow loop. AI plans a goal into steps, 
+executes step by step, watches for completion, recovers from missed targets.
+
+This is the biggest task. Take your time.
+
+Build:
+1. Create src/core/GuideModeRuntime.ts
+2. GuideModeRuntime orchestrates this loop:
+
+   START
+   → User states goal (voice or text)
+   → Build context (SemanticGraph + DomSnapshot + current URL + page title)
+   → Send to AI: "Plan this goal into steps. Return JSON: 
+     { steps: [ { stepId, instruction, targetHint, successCondition } ] }"
+   → Store step plan
+
+   FOR EACH STEP:
+   → Build fresh context
+   → Send to AI: current step instruction + targetHint + semantic graph
+     Ask AI to return: spoken guidance + [POINT:elementId:label] or [POINT:none]
+   → Speak guidance (TTS) + fly cursor to target
+   → Watch for success condition via MutationObserver / DOM polling:
+     - value changed on input
+     - element disappeared (form submitted)
+     - new route detected
+     - explicit host callback: clicky.stepCompleted()
+   → On success: advance to next step
+   → On timeout (15s): re-ask AI "user has not completed step X, 
+     what should we try instead?" — recovery attempt
+   → On 2 failed recoveries: emit onGuideBlocked(), pause
+
+   END
+   → Emit onGoalCompleted() with summary
+
+3. Add state machine states to StateMachine.ts:
+   guide-planning | guide-step-active | guide-step-watching | 
+   guide-recovering | guide-completed | guide-blocked
+
+4. Expose on ClickyClient:
+   - startGuide(goal: string): Promise<void>
+   - stepCompleted(): void   ← host app calls this if it knows
+   - cancelGuide(): void
+
+5. System prompt for guide mode must include:
+   - Current URL and page title
+   - Semantic graph JSON
+   - Step plan context
+   - Instruction: "You are guiding a user step by step. 
+     Speak naturally, one sentence max. 
+     Always end with a [POINT:elementId:label] tag if pointing helps. 
+     Never say 'just' or 'simply'. 
+     Write for the ear, not the eye. All lowercase."
+
+Files: create src/core/GuideModeRuntime.ts,
+       modify src/core/StateMachine.ts,
+       modify src/core/ClickyClient.ts,
+       modify src/api/ClaudeClient.ts (add guide-mode system prompt)
+
+Acceptance criteria:
+- "Help me create an invoice" runs as 3-5 guided steps, not one response
+- Cursor points to the correct element at each step
+- If user does nothing for 15s, AI gives recovery instruction
+- onGoalCompleted fires when all steps pass success conditions
+- Host app can call stepCompleted() to manually advance
+
+---
+
+### TASK 5 — Voice provider cleanup + Google STT/TTS as first-class
+**Goal:** Rename old AssemblyAI abstractions, make provider switching clean
+
+Build:
+1. Rename AssemblyAIClient.ts → SpeechProvider.ts
+   Create a SpeechProvider interface:
+   interface SpeechProvider {
+     connect(): Promise<void>
+     disconnect(): void
+     sendAudio(chunk: ArrayBuffer): void
+     onTranscript: (text: string, isFinal: boolean) => void
+   }
+2. Create concrete providers:
+   - src/api/providers/GoogleSpeechProvider.ts (primary)
+   - src/api/providers/DeepgramProvider.ts (fallback)
+   - src/api/providers/AssemblyAIProvider.ts (legacy fallback)
+3. Create src/api/providers/TTSProvider.ts interface
+   Concrete implementations:
+   - GoogleTTSProvider.ts (primary — Chirp3 Zephyr)
+   - ElevenLabsProvider.ts (fallback)
+4. ProviderManager.ts: picks provider based on config, 
+   falls back automatically on failure, emits provider-switched event
+5. Update types.ts: ClickyVoiceProvider = "google" | "deepgram" | "assemblyai"
+6. Update ClickyClient.ts and Worker proxy routes to use new names
+
+Files: create src/api/providers/, modify src/core/ClickyClient.ts,
+       modify src/core/types.ts, modify round-voice-437d/src/index.ts
+
+Acceptance criteria:
+- Diagnostics shows "google-stt" or "deepgram" as active provider
+- Switching provider in Config.ts requires no other code changes
+- Fallback fires automatically on WebSocket failure, logged to telemetry
+
+---
+
+### TASK 6 — Live waveform + permission recovery UI
+**Goal:** User sees mic level while holding hotkey; clear recovery when mic denied
+
+Build:
+1. In MicCapture.ts: expose micLevel stream (0.0–1.0, 60fps via 
+   AnalyserNode from Web Audio API).
+2. In MicButton.ts / CompanionPanel.ts: render live waveform bars 
+   (5 bars, heights driven by micLevel, animate via requestAnimationFrame).
+3. Permission states to handle in CompanionPanel.ts:
+   - "denied": show message + browser-specific instructions 
+     (detect Chrome/Firefox/Safari via userAgent)
+   - "prompt": show "click to allow microphone"
+   - "granted": show waveform
+4. If micLevel < 0.02 for 3+ seconds while recording:
+   show "we can't hear you — check your mic" inline, non-blocking.
+5. VoiceActivityMeter.ts if it exists: integrate, otherwise create 
+   a lightweight version inline in MicCapture.ts.
+
+Files: modify src/audio/MicCapture.ts, modify src/panel/MicButton.ts,
+       modify src/panel/CompanionPanel.ts
+
+Acceptance criteria:
+- Waveform animates visibly when user speaks
+- Silent input shows "can't hear you" after 3s
+- Mic denied shows browser-specific help text
+- Waveform stops and hides after push-to-talk released
+
+---
+
+### TASK 7 — Model / provider picker in panel
+**Goal:** User can switch AI model and voice inside the companion panel
+
+Build:
+1. Add to CompanionPanel.ts a settings section (collapsed by default, 
+   toggle via gear icon):
+   - AI model select: options from Config.ts models array
+   - Voice provider select: Google / ElevenLabs
+   - Voice select: list from active TTS provider
+2. Persist selection to localStorage under key "clicky-sdk-settings"
+3. On change: update ClickyClient config live, no reload needed
+4. Show current model/voice in diagnostics panel
+
+Files: modify src/panel/CompanionPanel.ts, modify src/core/Config.ts,
+       modify src/core/types.ts
+
+Acceptance criteria:
+- User opens settings, switches model, next request uses new model
+- Selection survives page refresh
+- Diagnostics confirms active model and voice provider
+
+---
+
+### TASK 8 — Transient mode
+**Goal:** Companion cursor appears during interaction, hides when done.
+Matches Clicky's "Show Clicky off" behavior.
+
+Build:
+1. Add transientMode: boolean to Config.ts (default: false)
+2. When transientMode = true:
+   - Launcher button is always visible (persistent)
+   - Cursor overlay is hidden at rest
+   - On any voice/text interaction start: fade cursor in (200ms)
+   - On TTS complete + 1000ms inactivity: fade cursor out (300ms)
+   - Response bubble fades out with cursor
+3. When transientMode = false (default):
+   - Current behavior: cursor stays visible
+
+Files: modify src/overlay/CursorOverlay.ts, modify src/overlay/OverlayRoot.ts,
+       modify src/core/ClickyClient.ts, modify src/core/Config.ts
+
+Acceptance criteria:
+- transientMode: true hides cursor between interactions
+- Cursor appears within one animation frame of interaction start
+- Fade in/out are smooth (no flash)
+
+---
+
+### TASK 9 — Onboarding panel
+**Goal:** First-run experience. Checks permissions, validates SDK config, 
+shows a demo step so host developers know it works.
+
+Build:
+1. Create src/panel/OnboardingPanel.ts
+2. Show on first load if localStorage "clicky-sdk-onboarded" is not set
+3. Checklist items:
+   - Microphone permission (check via Permissions API, prompt if needed)
+   - Worker proxy reachable (GET /health → 200)
+   - AI provider reachable (quick test message, check response)
+   - TTS provider reachable (short audio test)
+4. Each item: pending → checking → pass / fail with reason
+5. On all pass: show "Ready. Try saying: help me find the search bar"
+   Run one demo guide step automatically as proof-of-life.
+6. Dismiss button sets "clicky-sdk-onboarded" = true in localStorage
+7. Host can override: clicky.showOnboarding() forces it open again
+
+Files: create src/panel/OnboardingPanel.ts,
+       modify src/panel/CompanionPanel.ts, modify src/core/ClickyClient.ts
+
+Acceptance criteria:
+- New install shows onboarding automatically
+- All 4 checks run and show pass/fail
+- Demo guide step runs and points to a real element on the page
+- Dismissed state persists across reload
+
+---
+
+### TASK 10 — Optional screenshot / vision mode
+**Goal:** When user opts in, capture screen and send to AI alongside DOM context.
+Matches Clicky's core screenshot+vision loop. DOM-first remains the default.
+
+Build:
+1. Add screenshotMode: "off" | "user-triggered" to Config.ts (default: "off")
+2. Create src/context/ScreenshotCapture.ts if not complete:
+   - Call navigator.mediaDevices.getDisplayMedia({ video: true })
+   - Capture one frame via ImageCapture or canvas drawImage
+   - Resize to max 1280px, encode as JPEG 80% quality (matches Clicky)
+   - Return base64 string
+3. When screenshotMode = "user-triggered":
+   - Add camera icon to CompanionPanel toolbar
+   - On click: request capture permission, take screenshot, attach to 
+     next AI request
+   - Show thumbnail preview in panel
+   - Permission denial: show help text, degrade gracefully to DOM-only
+4. In ClaudeClient.ts / WorkerProxy.ts: if screenshot present, 
+   include as image content block alongside DOM context in /ai/chat payload
+5. AI system prompt addendum when screenshot present:
+   "You are also given a screenshot of the current screen. 
+    Use it to verify element positions match the DOM context."
+
+Files: create/extend src/context/ScreenshotCapture.ts,
+       modify src/panel/CompanionPanel.ts,
+       modify src/api/ClaudeClient.ts,
+       modify src/api/WorkerProxy.ts
+
+Acceptance criteria:
+- Off by default — no permission prompt on load
+- User click triggers getDisplayMedia browser dialog
+- Screenshot attaches to next request only (not persistent)
+- If denied: next request uses DOM-only, no error thrown
+- Worker accepts and forwards image content block to AI
+
+---
+
+## Code conventions — follow these strictly
+
+- TypeScript strict mode. No any unless absolutely unavoidable.
+- All async operations: async/await. No raw Promise chains.
+- All animation: requestAnimationFrame. No setInterval for visual updates.
+- No hardcoded selectors anywhere. All element targeting goes through 
+  ElementRegistry + SemanticGraph stableId.
+- Shadow DOM: all overlay UI must live inside Shadow DOM root. 
+  Do not pollute host page styles.
+- No console.log in production paths. Use the existing telemetry/diagnostics 
+  system for events.
+- Comments explain WHY, not WHAT.
+- After every task: run existing tests. Fix regressions before next task.
+- Do not rename existing public API methods on ClickyClient without 
+  adding a deprecated alias.
+- Do not touch round-voice-437d Worker code unless a task explicitly 
+  requires it.
+
+---
+
+## What success looks like
+
+When all 10 tasks are done, a developer embeds the SDK in any SaaS app,
+the user says "help me create an invoice", and:
+
+1. Cursor appears from nowhere
+2. AI speaks: "tap new invoice up top"
+3. Blue cursor flies in an arc to the New Invoice button
+4. Highlight glows around it
+5. User clicks it — guide advances automatically
+6. AI speaks next step, cursor flies to next target
+7. Goal completes, cursor fades out
+
+That is the full Clicky experience, running in the browser.
+**********************
+PowerShell transcript end
+End time: 20260607135151
+**********************

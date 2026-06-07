@@ -1,0 +1,69 @@
+**********************
+PowerShell transcript start
+Start time: 20260528020031
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$logPath = Join-Path 'C:\Users\jadha\clicky.ai\logs' "$timestamp-start-vite-5173-clean.log"
+Start-Transcript -Path $logPath -Force | Out-Null
+$stdout = Join-Path 'C:\Users\jadha\clicky.ai\logs' "$timestamp-vite-5173.out.log"
+$stderr = Join-Path 'C:\Users\jadha\clicky.ai\logs' "$timestamp-vite-5173.err.log"
+$script = "Set-Location 'C:\Users\jadha\clicky.ai\clicky-web-sdk'; `$env:VITE_CLICKY_WORKER_BASE_URL='https://round-voice-437d.essora-contactus.workers.dev'; npm run dev -- --port 5173 --host 127.0.0.1 --strictPort"
+$p = Start-Process -FilePath 'pwsh' -ArgumentList '-NoProfile','-Command',$script -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+Write-Output "Started Vite PID $($p.Id)"
+Start-Sleep -Seconds 5
+Write-Output '--- stdout ---'
+Get-Content $stdout -ErrorAction SilentlyContinue
+Write-Output '--- stderr ---'
+Get-Content $stderr -ErrorAction SilentlyContinue
+Write-Output '--- ports ---'
+netstat -ano | Select-String ':5173|:5174'
+Stop-Transcript | Out-Null
+Get-Content $logPath
+Process ID: 22236
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+Started Vite PID 9524
+--- stdout ---
+
+> @clicky/web-sdk@0.1.0 dev
+> vite --host 127.0.0.1 --port 5173 --host 127.0.0.1 --strictPort
+
+
+  VITE v5.4.21  ready in 420 ms
+
+  ➜  Local:   http://127.0.0.1:5173/
+  ➜  press h + enter to show help
+--- stderr ---
+--- ports ---
+
+  TCP    127.0.0.1:5173         0.0.0.0:0              LISTENING       23292
+  TCP    127.0.0.1:5173         127.0.0.1:52036        ESTABLISHED     23292
+  TCP    127.0.0.1:5173         127.0.0.1:55243        ESTABLISHED     23292
+  TCP    127.0.0.1:5173         127.0.0.1:56219        ESTABLISHED     23292
+  TCP    127.0.0.1:5173         127.0.0.1:56319        ESTABLISHED     23292
+  TCP    127.0.0.1:5173         127.0.0.1:61752        ESTABLISHED     23292
+  TCP    127.0.0.1:5173         127.0.0.1:62061        ESTABLISHED     23292
+  TCP    127.0.0.1:5173         127.0.0.1:63784        ESTABLISHED     23292
+  TCP    127.0.0.1:52036        127.0.0.1:5173         ESTABLISHED     20184
+  TCP    127.0.0.1:55243        127.0.0.1:5173         ESTABLISHED     20184
+  TCP    127.0.0.1:56219        127.0.0.1:5173         ESTABLISHED     20184
+  TCP    127.0.0.1:56319        127.0.0.1:5173         ESTABLISHED     20184
+  TCP    127.0.0.1:61752        127.0.0.1:5173         ESTABLISHED     20184
+  TCP    127.0.0.1:62061        127.0.0.1:5173         ESTABLISHED     20184
+  TCP    127.0.0.1:63784        127.0.0.1:5173         ESTABLISHED     20184
+**********************
+PowerShell transcript end
+End time: 20260528020036
+**********************

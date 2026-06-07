@@ -1,0 +1,48 @@
+{
+  "name": "@clicky/web-sdk",
+  "version": "0.1.0",
+  "description": "Browser-native Clicky AI SDK for SaaS webapps.",
+  "type": "module",
+  "main": "./dist/clicky-web-sdk.umd.cjs",
+  "module": "./dist/clicky-web-sdk.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/clicky-web-sdk.js",
+      "require": "./dist/clicky-web-sdk.umd.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build && tsc -p tsconfig.build.json",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run src/test",
+    "test:watch": "vitest src/test",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "tsx e2e/report.ts"
+  },
+  "keywords": [
+    "clicky",
+    "ai",
+    "sdk",
+    "voice",
+    "browser"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^20.14.12",
+    "jsdom": "^29.1.1",
+    "playwright": "^1.60.0",
+    "tsx": "^4.22.4",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0",
+    "vitest": "^2.0.5"
+  }
+}

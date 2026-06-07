@@ -1,0 +1,86 @@
+licky SDK: HubSpot Testing Guide
+This guide explains how to inject and test the Clicky Web SDK directly into a live SaaS application like HubSpot. We use a browser extension called Tampermonkey to automatically inject our locally built SDK into the live HubSpot DOM, allowing us to test voice, vision, and cursor pointing without modifying HubSpot's actual codebase.
+
+Prerequisites
+Build the SDK: Ensure you have built the latest version of the SDK.
+bash
+
+cd clicky-web-sdk
+npm run build
+Start Local Server: Serve the built files locally.
+bash
+
+npm run dev
+Keep this terminal running. The SDK will be served at http://localhost:5173.
+Installation (Tampermonkey Setup)
+To make the SDK persist across page loads in HubSpot, we use Tampermonkey.
+
+Install Tampermonkey: Install the Tampermonkey browser extension for Chrome/Edge.
+Create a New Script: Click the Tampermonkey extension icon and select Create a new script...
+Paste the Injector Code: Delete the default template and paste the following code exactly as it appears:
+javascript
+
+// ==UserScript==
+// @name         Clicky SDK HubSpot Injector
+// @namespace    http://tampermonkey.net/
+// @version      2026-06-07
+// @description  Automatically injects the local Clicky SDK into HubSpot
+// @author       You
+// @match        *://*.hubspot.com/*
+// @match        *://hubspot.com/*
+// @grant        none
+// ==/UserScript==
+(function() {
+    'use strict';
+    
+    // Fetch the script directly to bypass strict Content Security Policies (CSP)
+    fetch('http://localhost:5173/dist/clicky-web-sdk.umd.cjs')
+        .then(response => response.text())
+        .then(scriptText => {
+            // Execute the fetched SDK code
+            eval(scriptText);
+            
+            console.log('✅ Clicky SDK Loaded via Tampermonkey Fetch');
+            
+            // Initialize the SDK, pointing to the LIVE Cloudflare Worker
+            window.ClickySDK.init({
+                workerBaseUrl: 'https://round-voice-437d.essora-contactus.workers.dev', 
+                appName: 'HubSpot-Dev-Test',
+                debug: true,
+                privacy: {
+                    // Redact sensitive elements before sending DOM to AI
+                    privateSelectors: ['.property-value', '[data-selenium-test="deal-amount"]']
+                }
+            });
+            
+            console.log('🚀 Clicky SDK Initialized on HubSpot automatically.');
+        })
+        .catch(err => console.error("Tampermonkey failed to load local Clicky SDK:", err));
+})();
+Save: Press Ctrl+S (or Cmd+S) to save the script.
+Testing Checklist
+Once the script is saved and your local npm run dev server is running, navigate to HubSpot.
+
+1. Verify Initialization
+Log into HubSpot.
+You should see the Clicky panel/microphone button appear on the screen.
+Open DevTools (F12) -> Console. You should see:
+✅ Clicky SDK Loaded via Tampermonkey Fetch
+🚀 Clicky SDK Initialized on HubSpot automatically.
+(Note: You can safely ignore any red CSP or raven.js errors in the console; these are normal HubSpot errors).
+2. Test Context & Vision (Does it see the page?)
+Navigate to a Contact or Deal record. Click the mic and ask:
+
+"Can you tell me what page I'm on right now?" "What are the names of the top three contacts you see on my screen?"
+
+Expected Result: The AI should respond verbally (via ElevenLabs) reading the specific data it sees in the live DOM.
+
+3. Test the Cursor Overlay (Can it point?)
+Ensure a specific button is visible on your screen (e.g., the "Create contact" or "Add" button). Click the mic and ask:
+
+"Can you point to the 'Add' button?"
+
+Expected Result: The blue cursor overlay should appear, animate across the screen, and land directly on the button. (Note: If the button is scrolled off-screen, the console will show target outside viewport).
+
+4. Test Navigation Persistence
+Click a link to navigate to a different module in HubSpot (e.g., from Contacts to Marketing). Expected Result: The Clicky UI should briefly disappear and automatically reappear on the new page, ready for new questions.

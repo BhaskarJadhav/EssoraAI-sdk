@@ -1,0 +1,34 @@
+**********************
+PowerShell transcript start
+Start time: 20260528013901
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$logDir = Join-Path (Get-Location) 'logs'
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+$logPath = Join-Path $logDir "$timestamp-create-logs-folder.log"
+Start-Transcript -Path $logPath -Force | Out-Null
+Write-Output "Created logs directory at $logDir"
+Write-Output "Terminal log: $logPath"
+Stop-Transcript | Out-Null
+Get-Content $logPath
+Process ID: 23848
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+Created logs directory at C:\Users\jadha\clicky.ai\logs
+Terminal log: C:\Users\jadha\clicky.ai\logs\20260528-013901-create-logs-folder.log
+**********************
+PowerShell transcript end
+End time: 20260528013901
+**********************

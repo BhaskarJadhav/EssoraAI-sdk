@@ -1,0 +1,248 @@
+**********************
+PowerShell transcript start
+Start time: 20260607145046
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $logDir = Join-Path 'C:\Users\jadha\clicky.ai' 'logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $logPath = Join-Path $logDir "e2e-read-package-demo-$timestamp.log"; Start-Transcript -Path $logPath -Force | Out-Null; Write-Host "LOG_PATH=$logPath"; Get-Content .\package.json -Raw; Get-Content .\demo\main.ts -Raw; Get-Content .\demo\index.html -Raw; Stop-Transcript | Out-Null
+Process ID: 31400
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+LOG_PATH=C:\Users\jadha\clicky.ai\logs\e2e-read-package-demo-20260607-145046.log
+{
+  "name": "@clicky/web-sdk",
+  "version": "0.1.0",
+  "description": "Browser-native Clicky AI SDK for SaaS webapps.",
+  "type": "module",
+  "main": "./dist/clicky-web-sdk.umd.cjs",
+  "module": "./dist/clicky-web-sdk.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/clicky-web-sdk.js",
+      "require": "./dist/clicky-web-sdk.umd.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build && tsc -p tsconfig.build.json",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "clicky",
+    "ai",
+    "sdk",
+    "voice",
+    "browser"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.14.12",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0",
+    "vitest": "^2.0.5"
+  }
+}
+import { ClickySDK } from "../src";
+
+const clicky = ClickySDK.init({
+  workerBaseUrl: import.meta.env.VITE_CLICKY_WORKER_BASE_URL ?? "http://localhost:8787",
+  appName: "Acme CRM Demo",
+  enableScreenshots: false,
+  enableTTS: true,
+  enableLocalFallback: true,
+  apiRoutes: {
+    chat: "/ai/chat",
+    sttToken: "/voice/stt-token",
+    tts: "/voice/tts"
+  }
+});
+
+(window as unknown as { clickyDemo: typeof clicky }).clickyDemo = clicky;
+
+const diagnosticsElement = document.getElementById("clicky-diagnostics");
+
+function renderDiagnostics(eventName: string) {
+  if (!diagnosticsElement) {
+    return;
+  }
+
+  diagnosticsElement.textContent = JSON.stringify(
+    {
+      eventName,
+      diagnostics: clicky.getDiagnostics(),
+      updatedAt: new Date().toISOString()
+    },
+    null,
+    2
+  );
+}
+
+for (const eventName of [
+  "health:changed",
+  "task:started",
+  "task:ended",
+  "dom:changed",
+  "semantic-map:updated",
+  "cursor:targeted",
+  "cursor:missed",
+  "provider:degraded",
+  "provider:recovered",
+  "memory:loaded",
+  "memory:saved",
+  "telemetry:sent",
+  "error"
+] as const) {
+  clicky.on(eventName, () => renderDiagnostics(eventName));
+}
+
+renderDiagnostics("demo-loaded");
+
+clicky.registerAction({
+  id: "focusElement",
+  name: "Focus element",
+  description: "Focus a currently visible element by Clicky element id.",
+  parametersSchema: {
+    type: "object",
+    required: ["elementId"],
+    properties: {
+      elementId: { type: "string" }
+    }
+  },
+  async execute(parameters, context) {
+    const targetElement = context.elementRegistry.getElementById(String(parameters.elementId));
+    if (targetElement instanceof HTMLElement) {
+      targetElement.focus();
+      return { ok: true, message: "Focused element" };
+    }
+    return { ok: false, message: "Element not found" };
+  }
+});
+
+clicky.registerAction({
+  id: "clickElement",
+  name: "Click element",
+  description: "Click a currently visible safe element by Clicky element id.",
+  parametersSchema: {
+    type: "object",
+    required: ["elementId"],
+    properties: {
+      elementId: { type: "string" }
+    }
+  },
+  async execute(parameters, context) {
+    const targetElement = context.elementRegistry.getElementById(String(parameters.elementId));
+    if (targetElement instanceof HTMLElement) {
+      targetElement.click();
+      return { ok: true, message: "Clicked element" };
+    }
+    return { ok: false, message: "Element not found" };
+  }
+});
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Clicky Web SDK Demo</title>
+    <link rel="stylesheet" href="/demo/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell" data-clicky-context="Demo SaaS dashboard">
+      <nav class="sidebar" aria-label="Primary">
+        <strong>Acme CRM</strong>
+        <button data-clicky-label="Dashboard navigation">Dashboard</button>
+        <button data-clicky-label="Customers navigation">Customers</button>
+        <button data-clicky-label="Billing navigation">Billing</button>
+      </nav>
+
+      <section class="content">
+        <header class="toolbar">
+          <div>
+            <h1>Pipeline Review</h1>
+            <p>Review high-value accounts and next steps.</p>
+          </div>
+          <button id="create-invoice" data-clicky-label="Create invoice">Create invoice</button>
+        </header>
+
+        <section class="metric-grid" aria-label="Pipeline metrics">
+          <article>
+            <span>Open pipeline</span>
+            <strong>$482K</strong>
+          </article>
+          <article>
+            <span>At risk</span>
+            <strong>7 accounts</strong>
+          </article>
+          <article>
+            <span>Due today</span>
+            <strong>14 tasks</strong>
+          </article>
+        </section>
+
+        <form class="search-row" role="search">
+          <label for="customer-search">Find a customer</label>
+          <input id="customer-search" placeholder="Search accounts" />
+          <button type="button" id="submit-search">Search</button>
+        </form>
+
+        <table aria-label="Accounts table">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>Stage</th>
+              <th>Owner</th>
+              <th>Next step</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Northstar Labs</td>
+              <td>Security review</td>
+              <td>Maya</td>
+              <td><button data-clicky-label="Schedule Northstar follow-up">Schedule follow-up</button></td>
+            </tr>
+            <tr>
+              <td>BrightBank</td>
+              <td>Procurement</td>
+              <td>Jules</td>
+              <td><button data-clicky-label="Open BrightBank procurement notes">Open notes</button></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <section class="diagnostics" aria-label="Clicky diagnostics">
+          <div>
+            <h2>Clicky Diagnostics</h2>
+            <p>Realtime SDK health, latency, targeting, and provider status.</p>
+          </div>
+          <pre id="clicky-diagnostics">{}</pre>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/demo/main.ts"></script>
+  </body>
+</html>
+**********************
+PowerShell transcript end
+End time: 20260607145047
+**********************

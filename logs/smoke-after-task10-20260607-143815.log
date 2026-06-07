@@ -1,0 +1,26 @@
+**********************
+PowerShell transcript start
+Start time: 20260607143815
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $logDir = Join-Path 'C:\Users\jadha\clicky.ai' 'logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $logPath = Join-Path $logDir "smoke-after-task10-$timestamp.log"; Start-Transcript -Path $logPath -Force | Out-Null; Write-Host "LOG_PATH=$logPath"; try { $response = Invoke-WebRequest -Uri 'http://127.0.0.1:5173/demo/' -UseBasicParsing -TimeoutSec 5; Write-Host "STATUS=$($response.StatusCode)" } catch { Write-Host "ERROR=$($_.Exception.Message)"; exit 1 } finally { Stop-Transcript | Out-Null }
+Process ID: 29544
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+LOG_PATH=C:\Users\jadha\clicky.ai\logs\smoke-after-task10-20260607-143815.log
+STATUS=200
+**********************
+PowerShell transcript end
+End time: 20260607143815
+**********************

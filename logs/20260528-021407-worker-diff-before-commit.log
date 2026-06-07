@@ -1,0 +1,32 @@
+**********************
+PowerShell transcript start
+Start time: 20260528021407
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$logPath = Join-Path 'C:\Users\jadha\clicky.ai\logs' "$timestamp-worker-diff-before-commit.log"
+Start-Transcript -Path $logPath -Force | Out-Null
+git status --short
+git diff -- src/index.ts
+Stop-Transcript | Out-Null
+Get-Content $logPath
+Process ID: 17236
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+
+
+**********************
+PowerShell transcript end
+End time: 20260528021407
+**********************

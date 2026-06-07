@@ -1,0 +1,56 @@
+**********************
+PowerShell transcript start
+Start time: 20260528015853
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$logPath = Join-Path 'C:\Users\jadha\clicky.ai\logs' "$timestamp-restart-vite-5173.log"
+Start-Transcript -Path $logPath -Force | Out-Null
+Write-Output '--- port owners before ---'
+$ports = 5173,5174
+$connections = Get-NetTCPConnection -LocalPort $ports -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,State,OwningProcess
+$connections | Format-Table -AutoSize
+$processIds = $connections | Select-Object -ExpandProperty OwningProcess -Unique
+foreach ($processId in $processIds) {
+  if ($processId -and $processId -ne $PID) {
+    $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
+    if ($process -and ($process.ProcessName -match 'node|npm|cmd|pwsh|powershell')) {
+      Write-Output "Stopping process $processId ($($process.ProcessName)) using SDK dev port"
+      Stop-Process -Id $processId -Force
+    } else {
+      Write-Output "Skipping process $processId ($($process.ProcessName))"
+    }
+  }
+}
+Start-Sleep -Seconds 2
+Write-Output '--- port owners after stop ---'
+Get-NetTCPConnection -LocalPort $ports -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,State,OwningProcess | Format-Table -AutoSize
+$stdout = Join-Path 'C:\Users\jadha\clicky.ai\logs' "$timestamp-vite-5173.out.log"
+$stderr = Join-Path 'C:\Users\jadha\clicky.ai\logs' "$timestamp-vite-5173.err.log"
+$script = "Set-Location 'C:\Users\jadha\clicky.ai\clicky-web-sdk'; `$env:VITE_CLICKY_WORKER_BASE_URL='https://round-voice-437d.essora-contactus.workers.dev'; npm run dev -- --port 5173 --host 127.0.0.1 --strictPort"
+$started = Start-Process -FilePath 'pwsh' -ArgumentList '-NoProfile','-Command',$script -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+Write-Output "Started Vite process: $($started.Id)"
+Start-Sleep -Seconds 4
+Write-Output '--- vite stdout ---'
+Get-Content $stdout -ErrorAction SilentlyContinue
+Write-Output '--- vite stderr ---'
+Get-Content $stderr -ErrorAction SilentlyContinue
+Write-Output '--- port owners final ---'
+Get-NetTCPConnection -LocalPort 5173 -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,State,OwningProcess | Format-Table -AutoSize
+Stop-Transcript | Out-Null
+Get-Content $logPath
+Process ID: 5748
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+--- port owners before ---

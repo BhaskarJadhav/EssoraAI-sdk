@@ -1,0 +1,249 @@
+**********************
+PowerShell transcript start
+Start time: 20260607151045
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$ErrorActionPreference='Stop'
+$repo='C:\Users\jadha\clicky.ai'
+$log=Join-Path $repo ("logs\read-context-collector-dom-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".log")
+Start-Transcript -Path $log -Force | Out-Null
+Set-Location (Join-Path $repo 'clicky-web-sdk')
+Get-Content src\context\ContextCollector.ts
+Get-Content src\context\DomSnapshot.ts
+Stop-Transcript | Out-Null
+Write-Output "Logged read to $log"
+Process ID: 29768
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+import type { ClickyCapturedContext, NormalizedClickyOptions } from "../core/types";
+import { ElementRegistry } from "./ElementRegistry";
+import { DomSnapshot } from "./DomSnapshot";
+import { SemanticGraph } from "./SemanticGraph";
+import { ScreenshotCapture } from "./ScreenshotCapture";
+
+export class ContextCollector {
+  private readonly domSnapshot: DomSnapshot;
+  private readonly semanticGraph: SemanticGraph;
+  private readonly screenshotCapture = new ScreenshotCapture();
+  private semanticMapVersion = 0;
+
+  constructor(
+    private readonly options: NormalizedClickyOptions,
+    readonly elementRegistry: ElementRegistry
+  ) {
+    this.domSnapshot = new DomSnapshot(options, elementRegistry);
+    this.semanticGraph = new SemanticGraph(options, elementRegistry);
+  }
+
+  async capture(options: { includeScreenshot?: boolean } = {}): Promise<ClickyCapturedContext> {
+    const domSnapshotResult = this.domSnapshot.capture();
+    const semanticGraph = this.semanticGraph.build();
+    const screenshots = [];
+
+    if (options.includeScreenshot && this.options.enableScreenshots && this.options.contextMode !== "dom-only") {
+      screenshots.push(await this.screenshotCapture.captureStill());
+    }
+
+    return {
+      semanticMapVersion: this.semanticMapVersion,
+      appName: this.options.appName,
+      tenantId: this.options.tenantId,
+      userId: this.options.userId,
+      sessionId: this.options.sessionId,
+      url: window.location.href,
+      title: document.title,
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        scrollX: window.scrollX,
+        scrollY: window.scrollY
+      },
+      pageText: domSnapshotResult.pageText,
+      elements: domSnapshotResult.elements,
+      semanticGraph,
+      screenshots,
+      capturedAt: new Date().toISOString()
+    };
+  }
+
+  markDomChanged(): number {
+    this.semanticMapVersion += 1;
+    return this.semanticMapVersion;
+  }
+
+  getSemanticMapVersion(): number {
+    return this.semanticMapVersion;
+  }
+}
+import type { ClickyCapturedElement, ClickyRect, NormalizedClickyOptions } from "../core/types";
+import { isVisibleElement } from "../utils/dom";
+import { ElementRegistry } from "./ElementRegistry";
+import { Redaction } from "./Redaction";
+import { createStableSelector } from "./selectors";
+
+const contextSelector = [
+  "a",
+  "button",
+  "input",
+  "textarea",
+  "select",
+  "summary",
+  "[role]",
+  "[aria-label]",
+  "[data-clicky-label]",
+  "[data-clicky-context]",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "label",
+  "th",
+  "td"
+].join(",");
+
+export type DomSnapshotResult = {
+  elements: ClickyCapturedElement[];
+  pageText: string;
+};
+
+export class DomSnapshot {
+  private readonly redaction: Redaction;
+
+  constructor(
+    private readonly options: NormalizedClickyOptions,
+    private readonly elementRegistry: ElementRegistry
+  ) {
+    this.redaction = new Redaction(options);
+  }
+
+  capture(): DomSnapshotResult {
+    this.elementRegistry.clear();
+
+    const candidateElements = Array.from(document.body.querySelectorAll(contextSelector));
+    const capturedElements: ClickyCapturedElement[] = [];
+    const pageTextParts: string[] = [];
+
+    for (const candidateElement of candidateElements) {
+      if (capturedElements.length >= 220) {
+        break;
+      }
+
+      if (this.redaction.shouldIgnoreElement(candidateElement) || !isVisibleElement(candidateElement)) {
+        continue;
+      }
+
+      const label = this.createLabel(candidateElement);
+      const text = this.createElementText(candidateElement);
+      if (!label && !text) {
+        continue;
+      }
+
+      const bounds = this.createBounds(candidateElement);
+      const id = this.elementRegistry.registerElement(candidateElement);
+      const capturedElement: ClickyCapturedElement = {
+        id,
+        tagName: candidateElement.tagName.toLowerCase(),
+        role: candidateElement.getAttribute("role") ?? undefined,
+        label,
+        text,
+        selector: createStableSelector(candidateElement),
+        bounds,
+        isInteractive: this.isInteractive(candidateElement)
+      };
+
+      capturedElements.push(capturedElement);
+      pageTextParts.push([label, text].filter(Boolean).join(": "));
+    }
+
+    return {
+      elements: capturedElements,
+      pageText: pageTextParts.join("\n").slice(0, 12000)
+    };
+  }
+
+  private createLabel(element: Element): string {
+    const explicitClickyLabel = element.getAttribute("data-clicky-label");
+    if (explicitClickyLabel) {
+      return explicitClickyLabel.trim();
+    }
+
+    const ariaLabel = element.getAttribute("aria-label");
+    if (ariaLabel) {
+      return ariaLabel.trim();
+    }
+
+    const labelledBy = element.getAttribute("aria-labelledby");
+    if (labelledBy) {
+      const labelText = labelledBy
+        .split(/\s+/)
+        .map((id) => document.getElementById(id)?.textContent?.trim())
+        .filter(Boolean)
+        .join(" ");
+      if (labelText) {
+        return labelText;
+      }
+    }
+
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
+      const escapedElementId =
+        element.id && typeof CSS !== "undefined" && CSS.escape ? CSS.escape(element.id) : element.id.replace(/["\\]/g, "\\$&");
+      const labelElement = element.id ? document.querySelector(`label[for="${escapedElementId}"]`) : undefined;
+      if (labelElement?.textContent) {
+        return labelElement.textContent.trim();
+      }
+      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+        return element.placeholder || element.name || (element instanceof HTMLInputElement ? element.type : "textarea");
+      }
+      return element.name || "select";
+    }
+
+    return "";
+  }
+
+  private createElementText(element: Element): string {
+    if (this.redaction.isPrivateElement(element)) {
+      return "[redacted]";
+    }
+
+    const inputValue = this.redaction.getSafeInputValue(element);
+    const elementText = this.redaction.getSafeTextContent(element);
+    const clickyContext = element.getAttribute("data-clicky-context") ?? "";
+
+    return [clickyContext, elementText, inputValue].filter(Boolean).join(" ").slice(0, 600);
+  }
+
+  private createBounds(element: Element): ClickyRect {
+    const rect = element.getBoundingClientRect();
+    return {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height)
+    };
+  }
+
+  private isInteractive(element: Element): boolean {
+    const tagName = element.tagName.toLowerCase();
+    return (
+      ["a", "button", "input", "textarea", "select", "summary"].includes(tagName) ||
+      ["button", "link", "textbox", "checkbox", "radio", "switch", "menuitem", "tab"].includes(element.getAttribute("role") ?? "")
+    );
+  }
+}
+**********************
+PowerShell transcript end
+End time: 20260607151045
+**********************

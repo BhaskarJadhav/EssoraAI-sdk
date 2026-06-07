@@ -1,0 +1,91 @@
+**********************
+PowerShell transcript start
+Start time: 20260528022616
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $logDir = Join-Path (Get-Location) 'logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $logPath = Join-Path $logDir "plan-sdk-tree-$timestamp.log"; Start-Transcript -Path $logPath -Force | Out-Null; Write-Host "LOG_PATH=$logPath"; Get-ChildItem -Path .\clicky-web-sdk\src -Recurse -File | Select-Object -ExpandProperty FullName; Stop-Transcript | Out-Null
+Process ID: 10948
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+LOG_PATH=C:\Users\jadha\clicky.ai\logs\plan-sdk-tree-20260528-022616.log
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\global.d.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\index.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\vite-env.d.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\actions\ActionExecutor.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\actions\ActionPlanner.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\actions\ActionRegistry.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\actions\actionTypes.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\actions\ConfirmationPolicy.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\api\AssemblyAIClient.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\api\ClaudeClient.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\api\ElevenLabsClient.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\api\HealthClient.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\api\MemoryClient.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\api\SpeechUploadClient.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\api\SseParser.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\api\TelemetryClient.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\api\WorkerProxy.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\audio\AudioPlayer.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\audio\AudioWorkletProcessor.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\audio\MicCapture.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\audio\PcmEncoder.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\audio\VoiceActivityMeter.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\audio\WavEncoder.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\context\AccessibilitySnapshot.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\context\ContextCollector.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\context\DomSnapshot.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\context\ElementRegistry.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\context\Redaction.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\context\ScreenshotCapture.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\context\selectors.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\context\SemanticMapObserver.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\core\ClickyClient.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\core\Config.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\core\EventBus.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\core\Lifecycle.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\core\LocalGuidanceEngine.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\core\StateMachine.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\core\types.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\overlay\CursorAnimator.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\overlay\CursorOverlay.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\overlay\ElementHighlighter.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\overlay\OverlayRoot.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\overlay\overlayStyles.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\overlay\ResponseBubble.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\panel\CompanionPanel.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\panel\LauncherButton.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\panel\MicButton.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\panel\PanelRoot.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\panel\panelStyles.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\panel\PermissionStatus.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\parsing\ActionTagParser.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\parsing\PointTagParser.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\parsing\ResponseCleaner.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\shared\browserSupport.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\shared\DesignSystem.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\shared\ShadowDom.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\test\actions.test.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\test\context.test.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\test\core.test.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\test\media-api.test.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\test\parsing.test.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\test\realtime.test.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\utils\dom.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\utils\logger.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\utils\time.ts
+C:\Users\jadha\clicky.ai\clicky-web-sdk\src\utils\uuid.ts
+**********************
+PowerShell transcript end
+End time: 20260528022616
+**********************

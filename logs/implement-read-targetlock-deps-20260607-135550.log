@@ -1,0 +1,137 @@
+**********************
+PowerShell transcript start
+Start time: 20260607135550
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $logDir = Join-Path 'C:\Users\jadha\clicky.ai' 'logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $logPath = Join-Path $logDir "implement-read-targetlock-deps-$timestamp.log"; Start-Transcript -Path $logPath -Force | Out-Null; Write-Host "LOG_PATH=$logPath"; Get-Content .\clicky-web-sdk\src\context\ElementRegistry.ts -Raw; Get-Content .\clicky-web-sdk\src\core\EventBus.ts -Raw; Get-Content .\clicky-web-sdk\src\context\SemanticMapObserver.ts -Raw; Stop-Transcript | Out-Null
+Process ID: 24472
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+LOG_PATH=C:\Users\jadha\clicky.ai\logs\implement-read-targetlock-deps-20260607-135550.log
+import { createUuid } from "../utils/uuid";
+
+export class ElementRegistry {
+  private readonly elementById = new Map<string, Element>();
+  private readonly idByElement = new WeakMap<Element, string>();
+
+  registerElement(element: Element): string {
+    const existingId = this.idByElement.get(element);
+    if (existingId) {
+      return existingId;
+    }
+
+    const elementId = createUuid("clicky-element");
+    this.idByElement.set(element, elementId);
+    this.elementById.set(elementId, element);
+    return elementId;
+  }
+
+  getElementById(elementId: string): Element | undefined {
+    return this.elementById.get(elementId);
+  }
+
+  clear(): void {
+    this.elementById.clear();
+  }
+}
+import type { ClickyEventHandler, ClickyEventMap, ClickyEventName } from "./types";
+
+export class EventBus {
+  private readonly handlersByEventName = new Map<ClickyEventName, Set<ClickyEventHandler<ClickyEventName>>>();
+
+  on<EventName extends ClickyEventName>(eventName: EventName, handler: ClickyEventHandler<EventName>): () => void {
+    const handlers = this.handlersByEventName.get(eventName) ?? new Set();
+    handlers.add(handler as ClickyEventHandler<ClickyEventName>);
+    this.handlersByEventName.set(eventName, handlers);
+
+    return () => {
+      this.off(eventName, handler);
+    };
+  }
+
+  off<EventName extends ClickyEventName>(eventName: EventName, handler: ClickyEventHandler<EventName>): void {
+    const handlers = this.handlersByEventName.get(eventName);
+    if (!handlers) {
+      return;
+    }
+    handlers.delete(handler as ClickyEventHandler<ClickyEventName>);
+    if (handlers.size === 0) {
+      this.handlersByEventName.delete(eventName);
+    }
+  }
+
+  emit<EventName extends ClickyEventName>(eventName: EventName, payload: ClickyEventMap[EventName]): void {
+    const handlers = this.handlersByEventName.get(eventName);
+    if (!handlers) {
+      return;
+    }
+
+    for (const handler of Array.from(handlers)) {
+      handler(payload as ClickyEventMap[ClickyEventName]);
+    }
+  }
+
+  clear(): void {
+    this.handlersByEventName.clear();
+  }
+}
+import { debounce } from "../utils/time";
+
+export type SemanticMapObserverHandler = () => void;
+
+export class SemanticMapObserver {
+  private mutationObserver?: MutationObserver;
+  private cleanupCallbacks: Array<() => void> = [];
+
+  constructor(private readonly onChanged: SemanticMapObserverHandler) {}
+
+  start(): void {
+    if (this.mutationObserver) {
+      return;
+    }
+
+    const debouncedChangeHandler = debounce(() => this.onChanged(), 120);
+    this.mutationObserver = new MutationObserver(() => debouncedChangeHandler());
+    this.mutationObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["aria-label", "role", "disabled", "hidden", "style", "class", "data-clicky-label"]
+    });
+
+    const scrollHandler = () => debouncedChangeHandler();
+    const resizeHandler = () => debouncedChangeHandler();
+    const routeHandler = () => debouncedChangeHandler();
+    window.addEventListener("scroll", scrollHandler, true);
+    window.addEventListener("resize", resizeHandler);
+    window.addEventListener("popstate", routeHandler);
+    this.cleanupCallbacks = [
+      () => window.removeEventListener("scroll", scrollHandler, true),
+      () => window.removeEventListener("resize", resizeHandler),
+      () => window.removeEventListener("popstate", routeHandler)
+    ];
+  }
+
+  stop(): void {
+    this.mutationObserver?.disconnect();
+    this.mutationObserver = undefined;
+    for (const cleanupCallback of this.cleanupCallbacks.splice(0)) {
+      cleanupCallback();
+    }
+  }
+}
+**********************
+PowerShell transcript end
+End time: 20260607135550
+**********************

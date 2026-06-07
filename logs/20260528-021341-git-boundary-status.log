@@ -1,0 +1,44 @@
+**********************
+PowerShell transcript start
+Start time: 20260528021341
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$logPath = Join-Path 'C:\Users\jadha\clicky.ai\logs' "$timestamp-git-boundary-status.log"
+Start-Transcript -Path $logPath -Force | Out-Null
+Write-Output '--- root git ---'
+git -C C:\Users\jadha\clicky.ai status --short 2>&1
+Write-Output '--- git dirs ---'
+Get-ChildItem -Path C:\Users\jadha\clicky.ai -Directory -Force | Where-Object { Test-Path (Join-Path $_.FullName '.git') } | Select-Object FullName
+Write-Output '--- clicky-web-sdk git ---'
+git -C C:\Users\jadha\clicky.ai\clicky-web-sdk status --short 2>&1
+Write-Output '--- round-voice git ---'
+git -C C:\Users\jadha\clicky.ai\round-voice-437d status --short
+Write-Output '--- round-voice remote ---'
+git -C C:\Users\jadha\clicky.ai\round-voice-437d remote -v
+Stop-Transcript | Out-Null
+Get-Content $logPath
+Process ID: 20844
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+--- root git ---
+fatal: not a git repository (or any of the parent directories): .git
+--- git dirs ---
+
+
+
+**********************
+PowerShell transcript end
+End time: 20260528021341
+**********************

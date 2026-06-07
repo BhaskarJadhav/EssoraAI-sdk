@@ -1,0 +1,50 @@
+**********************
+PowerShell transcript start
+Start time: 20260607151914
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$ErrorActionPreference='Stop'
+$repo='C:\Users\jadha\clicky.ai'
+$log=Join-Path $repo ("logs\inspect-live-target-ids-after-alias-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".log")
+Start-Transcript -Path $log -Force | Out-Null
+Set-Location (Join-Path $repo 'clicky-web-sdk')
+@'
+const { chromium } = require('playwright');
+(async () => {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+  await page.goto('http://127.0.0.1:5173/demo/?tts=0');
+  await page.waitForFunction(() => !!window.__clickyTest);
+  await page.route('**/ai/chat', route => route.abort('failed'));
+  const eventPromise = page.waitForFunction(() => window.__clickyTest.events.some(e => e.eventName === 'cursor:pointing'), null, { timeout: 10000 });
+  await page.evaluate(() => { void window.__clicky.sendUserText('find the search button'); });
+  await eventPromise;
+  const data = await page.evaluate(() => {
+    const event = window.__clickyTest.events.find(e => e.eventName === 'cursor:pointing');
+    const id = event?.payload?.command?.elementId;
+    return { id, targetByData: id ? !!document.querySelector(`[data-clicky-id="${CSS.escape(id)}"]`) : false };
+  });
+  console.log(JSON.stringify(data, null, 2));
+  await browser.close();
+})();
+'@ | node
+Stop-Transcript | Out-Null
+Write-Output "Logged post-alias id inspection to $log"
+Process ID: 1512
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+**********************
+PowerShell transcript end
+End time: 20260607151915
+**********************

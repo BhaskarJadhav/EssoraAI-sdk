@@ -1,0 +1,486 @@
+**********************
+PowerShell transcript start
+Start time: 20260607145005
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $logDir = Join-Path 'C:\Users\jadha\clicky.ai' 'logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $logPath = Join-Path $logDir "attachment-request-$timestamp.log"; Start-Transcript -Path $logPath -Force | Out-Null; Write-Host "LOG_PATH=$logPath"; Get-Content -LiteralPath 'C:\Users\jadha\.codex\attachments\1a8cfdbd-4332-4f76-8457-5c3557b7b6f8\pasted-text.txt' -Raw; Stop-Transcript | Out-Null
+Process ID: 14452
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+LOG_PATH=C:\Users\jadha\clicky.ai\logs\attachment-request-20260607-145005.log
+All 10 tasks done, tests passing, demo running. Now write the next Codex prompt — the **visual browser validation + real SaaS evaluation pass** that the agent flagged as unproven.
+
+---
+
+```
+# Codex Agent — Essora Web SDK: Browser Validation + Real SaaS Evaluation
+
+## Context
+All 10 SDK features are implemented and unit tests pass (16/16).
+What is NOT yet proven:
+- Pixel drift under 4px during scroll
+- Cursor animation smoothness at 60fps
+- Real multi-step guide on an actual SaaS UI
+- Screenshot + vision reasoning quality
+- Target lock surviving route changes
+- Onboarding checklist against a live backend
+
+Your job is to write and run a full browser evaluation suite using 
+Playwright + CDP. No new features. Validation only.
+
+Read the full SDK first before writing a single test.
+
+---
+
+## Step 0 — Read before you write
+
+Read these files:
+- src/core/ClickyClient.ts          ← public API, events
+- src/core/GuideModeRuntime.ts      ← guide loop, events
+- src/overlay/CursorAnimator.ts     ← bezier flight, timing
+- src/overlay/CursorOverlay.ts      ← transient mode, fade
+- src/overlay/TargetLock.ts         ← scroll/resize/route lock
+- src/overlay/ElementHighlighter.ts ← highlight rect
+- src/context/SemanticGraph.ts      ← graph build, stableId
+- src/panel/OnboardingPanel.ts      ← checklist flow
+- src/panel/CompanionPanel.ts       ← settings, waveform
+- src/context/ScreenshotCapture.ts  ← getDisplayMedia path
+- demo/main.ts                      ← demo app entry point
+- demo/index.html                   ← demo page structure
+- package.json                      ← test/build scripts
+
+---
+
+## Step 1 — Setup Playwright
+
+Install Playwright if not present:
+  npm install --save-dev playwright @playwright/test
+
+Add to package.json scripts:
+  "test:e2e": "playwright test",
+  "test:e2e:headed": "playwright test --headed"
+
+Create playwright.config.ts at repo root:
+- baseURL: http://127.0.0.1:5173
+- browser: chromium only
+- headless: true
+- slowMo: 0
+- video: on-failure
+- screenshot: on-failure
+- trace: on-failure
+
+---
+
+## Step 2 — Evaluation harness fixtures
+
+Create e2e/fixtures/sdk-fixture.ts
+
+This fixture must:
+1. Launch demo page at /demo/
+2. Wait for SDK to initialize (listen for clicky:ready event on window)
+3. Expose helpers:
+   - startGuide(goal: string): triggers SDK guide via window.__clicky.startGuide()
+   - waitForEvent(event: string, timeout?: number): returns event payload
+   - getCursorPosition(): returns { x, y } of the cursor overlay element 
+     via getBoundingClientRect()
+   - getHighlightRect(): returns DOMRect of the highlight element
+   - getTargetRect(stableId: string): returns DOMRect of the target element
+   - scrollPage(px: number): window.scrollBy(0, px)
+   - triggerRouteChange(path: string): history.pushState({}, '', path)
+   - getDiagnostics(): returns window.__clicky.getDiagnostics()
+
+---
+
+## Step 3 — Write evaluation tests
+
+Create these test files in e2e/:
+
+---
+
+### e2e/01-cursor-animation.spec.ts
+**Goal:** Prove bezier flight, rotation, pulse, fade, reduced-motion
+
+Test 1 — cursor flies to target:
+1. Call startGuide("click the submit button")
+2. waitForEvent("cursor:pointing")
+3. Record cursor position at t=0 (before flight)
+4. Record cursor position at arrival
+5. Assert: cursor moved (positions are different)
+6. Assert: cursor is within 20px of the target element center
+
+Test 2 — cursor fades after inactivity:
+1. Complete a guide step
+2. Wait for TTS complete event
+3. Wait 1200ms
+4. Get cursor overlay opacity via computed style
+5. Assert: opacity === "0" or visibility === "hidden"
+
+Test 3 — reduced-motion skips flight:
+1. Inject CSS: @media (prefers-reduced-motion: reduce) { * { 
+   animation-duration: 0ms !important; transition-duration: 0ms !important; } }
+   OR set via CDP: page.emulateMedia({ reducedMotion: 'reduce' })
+2. startGuide("click the submit button")
+3. waitForEvent("cursor:pointing")
+4. Assert: cursor reached target in under 50ms (no flight delay)
+
+Test 4 — arrival bob:
+1. waitForEvent("cursor:pointing")
+2. Wait 100ms
+3. Take cursor Y position
+4. Wait 700ms (half bob cycle ~600ms)
+5. Take cursor Y again
+6. Assert: Y positions differ by 2-6px (bob is happening)
+
+---
+
+### e2e/02-target-lock.spec.ts
+**Goal:** Prove highlight stays on element during scroll, resize, route change
+
+Test 1 — highlight follows element on scroll:
+1. startGuide(goal that points to an element below the fold)
+2. waitForEvent("cursor:pointing")
+3. Record highlight rect: R1 = getHighlightRect()
+4. Record target rect: T1 = getTargetRect(stableId)
+5. scrollPage(300)
+6. await requestAnimationFrame (page.evaluate(() => new Promise(r => requestAnimationFrame(r))))
+7. Record highlight rect: R2 = getHighlightRect()
+8. Record target rect: T2 = getTargetRect(stableId)
+9. Assert: |R2.top - T2.top| < 4   ← drift under 4px
+10. Assert: |R2.left - T2.left| < 4
+
+Test 2 — highlight survives resize:
+1. startGuide, waitForEvent("cursor:pointing")
+2. page.setViewportSize({ width: 800, height: 600 })
+3. Wait one RAF
+4. Recheck highlight vs target rects
+5. Assert drift < 4px
+
+Test 3 — route change re-lock:
+1. startGuide, waitForEvent("cursor:pointing"), note stableId from event
+2. triggerRouteChange('/other-page')
+3. Wait 2500ms
+4. If target element exists on new page: assert highlight re-attached
+5. If target does not exist: assert "cursor:target-lost" event fired
+
+Test 4 — target-lost event on element removal:
+1. startGuide pointing to an element
+2. waitForEvent("cursor:pointing")
+3. page.evaluate(() => document.querySelector('[data-target]').remove())
+4. Wait 500ms
+5. Assert "cursor:target-lost" event fired
+
+---
+
+### e2e/03-semantic-graph.spec.ts
+**Goal:** Prove graph captures the right elements and stableId is deterministic
+
+Test 1 — graph contains interactive elements:
+1. page.evaluate(() => window.__clicky.getContext())
+2. Parse semanticGraph from context
+3. Assert: graph contains at least one button, one input, one link
+4. Assert: every node has stableId, role, name, bounds
+5. Assert: bounds.width > 0 and bounds.height > 0 for visible elements
+
+Test 2 — stableId is deterministic:
+1. Call getContext() twice without changing DOM
+2. Compare semanticGraph arrays
+3. Assert: every stableId in call 1 exists in call 2
+4. Assert: no stableId changed between calls
+
+Test 3 — redacted fields excluded:
+1. page.evaluate(() => {
+     const el = document.createElement('input')
+     el.type = 'password'
+     el.id = 'test-password'
+     document.body.appendChild(el)
+   })
+2. Call getContext()
+3. Assert: semanticGraph does not contain node with id 'test-password'
+
+Test 4 — max 120 nodes:
+1. page.evaluate(() => {
+     for (let i = 0; i < 200; i++) {
+       const b = document.createElement('button')
+       b.textContent = 'btn ' + i
+       document.body.appendChild(b)
+     }
+   })
+2. Call getContext()
+3. Assert: semanticGraph.length <= 120
+
+---
+
+### e2e/04-guide-mode.spec.ts
+**Goal:** Prove multi-step guide runs correctly on the demo app
+
+Use the demo app's existing UI — do not mock the AI.
+If AI calls fail in CI (no keys), skip with test.skip and note in output.
+
+Test 1 — guide produces multiple steps:
+1. startGuide("fill out the contact form")
+2. waitForEvent("guide:plan-ready", { timeout: 10000 })
+3. Assert: event payload has steps array with length >= 2
+4. Assert: each step has stepId, instruction, targetHint
+
+Test 2 — guide advances on stepCompleted:
+1. startGuide("fill out the contact form")
+2. waitForEvent("guide:step-active")
+3. Note stepId: S1
+4. page.evaluate(() => window.__clicky.stepCompleted())
+5. waitForEvent("guide:step-active")
+6. Note stepId: S2
+7. Assert: S2 !== S1
+
+Test 3 — guide points to a real element each step:
+1. startGuide, waitForEvent("guide:step-active")
+2. waitForEvent("cursor:pointing")
+3. Get stableId from event
+4. Assert: document.querySelector([data-clicky-id="<stableId>"]) exists
+
+Test 4 — recovery fires after timeout:
+1. startGuide("complete checkout")
+2. waitForEvent("guide:step-active")
+3. Do NOT call stepCompleted — wait 16000ms
+4. waitForEvent("guide:recovering", { timeout: 17000 })
+5. Assert: event fired (recovery attempted)
+
+Test 5 — cancelGuide stops the loop:
+1. startGuide("fill out the form")
+2. waitForEvent("guide:step-active")
+3. page.evaluate(() => window.__clicky.cancelGuide())
+4. Wait 500ms
+5. Assert: getDiagnostics().state === "idle"
+
+---
+
+### e2e/05-voice-waveform.spec.ts
+**Goal:** Prove mic level events fire and silent detection works
+
+Note: real mic is not available in headless CI. Use fake audio.
+
+Setup: launch browser with fake audio:
+  use: { launchOptions: { args: ['--use-fake-device-for-media-stream',
+                                  '--use-fake-ui-for-media-stream'] } }
+
+Test 1 — mic:level event fires during recording:
+1. page.evaluate(() => window.__clicky.startListening())
+2. Collect mic:level events for 500ms
+3. page.evaluate(() => window.__clicky.stopListening())
+4. Assert: at least 5 mic:level events received
+5. Assert: all values are 0.0–1.0
+
+Test 2 — mic:silent fires after 3s of silence:
+1. Start listening with fake (silent) audio device
+2. Wait 3500ms
+3. Assert: mic:silent event fired
+
+Test 3 — permission denied state:
+1. Override getUserMedia to reject:
+   page.evaluate(() => {
+     navigator.mediaDevices.getUserMedia = () => 
+       Promise.reject(new DOMException('denied', 'NotAllowedError'))
+   })
+2. page.evaluate(() => window.__clicky.startListening())
+3. waitForEvent("mic:permission-denied")
+4. Assert: event fired
+
+---
+
+### e2e/06-onboarding.spec.ts
+**Goal:** Prove onboarding checklist runs and dismisses correctly
+
+Test 1 — onboarding shows on first load:
+1. Clear localStorage before page load
+2. Load demo page
+3. Wait for SDK ready
+4. Assert: onboarding panel is visible in shadow DOM
+5. Assert: panel contains checklist items (mic, worker, AI, TTS)
+
+Test 2 — checklist items complete:
+1. showOnboarding()
+2. Wait 8000ms for all checks
+3. Query checklist item states
+4. Assert: worker health check passed (demo Worker must be running)
+5. Note: mic/AI/TTS may fail in CI — assert they show a result, not hang
+
+Test 3 — dismiss persists:
+1. showOnboarding()
+2. Click dismiss button
+3. Reload page
+4. Assert: onboarding panel does NOT show on reload
+
+Test 4 — showOnboarding() reopens it:
+1. Dismiss onboarding
+2. page.evaluate(() => window.__clicky.showOnboarding())
+3. Assert: panel visible again
+
+---
+
+### e2e/07-screenshot-vision.spec.ts
+**Goal:** Prove screenshot capture attaches to AI request when enabled
+
+Note: getDisplayMedia requires user gesture and cannot be auto-approved 
+in headless Chromium. Use CDP to grant display-capture permission and 
+fake screen stream.
+
+Setup:
+  const context = await browser.newContext({
+    permissions: ['display-capture'],
+  })
+  args: ['--auto-select-desktop-capture-source=Entire screen',
+         '--use-fake-device-for-media-stream',
+         '--use-fake-ui-for-media-stream']
+
+Test 1 — screenshot capture succeeds:
+1. Set screenshotMode: "user-triggered" in config
+2. page.evaluate(() => window.__clicky.triggerScreenshot())
+3. waitForEvent("screenshot:captured", { timeout: 5000 })
+4. Get event payload
+5. Assert: payload.dataUrl starts with "data:image/jpeg"
+6. Assert: payload.width <= 1280
+
+Test 2 — screenshot attaches to next AI request:
+1. Trigger screenshot
+2. waitForEvent("screenshot:captured")
+3. Intercept next /ai/chat Worker request via page.route()
+4. startGuide("what do you see on my screen")
+5. Assert: intercepted request body contains an image content block
+6. Assert: image content block type === "base64" and mediaType === "image/jpeg"
+
+Test 3 — screenshot off by default:
+1. Do NOT set screenshotMode
+2. Intercept /ai/chat requests
+3. startGuide("help me find the search bar")
+4. waitForEvent("guide:step-active")
+5. Assert: intercepted request body does NOT contain an image content block
+
+Test 4 — denied gracefully degrades:
+1. Override getDisplayMedia to reject:
+   page.evaluate(() => {
+     navigator.mediaDevices.getDisplayMedia = () =>
+       Promise.reject(new DOMException('denied', 'NotAllowedError'))
+   })
+2. page.evaluate(() => window.__clicky.triggerScreenshot())
+3. waitForEvent("screenshot:denied")
+4. Assert: event fired, no unhandled error in console
+
+---
+
+## Step 4 — Measurement report
+
+After all tests run, create e2e/report.ts that:
+
+1. Reads Playwright JSON results
+2. Outputs a markdown report: e2e/EVAL_REPORT.md
+
+Report must include these sections:
+
+### Animation quality
+- Cursor flight: pass/fail
+- Arrival bob: pass/fail  
+- Reduced-motion skip: pass/fail
+- Fade after inactivity: pass/fail
+
+### Target lock accuracy
+- Max observed drift during scroll (px)
+- Max observed drift during resize (px)
+- Route re-lock: pass/fail
+- target-lost event: pass/fail
+
+### Semantic graph
+- Element count on demo page
+- stableId consistency: pass/fail
+- Redaction: pass/fail
+- 120-node cap: pass/fail
+
+### Guide mode
+- Steps generated per goal (count)
+- Step advance on stepCompleted: pass/fail
+- Recovery after timeout: pass/fail
+- Cancel stops loop: pass/fail
+
+### Voice
+- mic:level events per second (rate)
+- Silent detection latency (ms)
+- Permission denied handling: pass/fail
+
+### Onboarding
+- First-run auto-show: pass/fail
+- All checks complete: pass/fail
+- Dismiss persistence: pass/fail
+
+### Screenshot vision
+- Capture success: pass/fail
+- Attaches to request: pass/fail
+- Off by default: pass/fail
+- Graceful denial: pass/fail
+
+### Overall
+- Total tests: N
+- Passed: N
+- Failed: N
+- Known CI limitations (mic, display capture, live AI keys): list them
+
+---
+
+## Step 5 — Fix failures
+
+After the report is generated:
+1. For each failed test: read the failure, identify root cause in SDK code
+2. Fix the SDK code (not the test, unless the test is wrong)
+3. Re-run only the failing spec: npx playwright test e2e/XX-*.spec.ts
+4. Iterate until it passes
+5. Re-run full suite: npm run test:e2e
+6. Confirm all previously passing tests still pass
+
+Do NOT change test assertions to make tests pass. Fix the implementation.
+
+---
+
+## Constraints
+
+- Do not add new features. Validation only.
+- Do not mock the cursor animation — measure real DOM positions.
+- Do not mock the semantic graph — query the real shadow DOM.
+- AI-dependent tests (guide mode, screenshot vision): 
+  if no API keys in environment, use test.skip() with clear message.
+  Do not fake AI responses — that defeats the evaluation.
+- All tests must be deterministic. No arbitrary sleeps over 500ms 
+  except where explicitly specified (recovery timeout test: 16s).
+- e2e/EVAL_REPORT.md must be committed alongside the test results.
+
+---
+
+## Deliverables
+
+1. playwright.config.ts
+2. e2e/fixtures/sdk-fixture.ts
+3. e2e/01-cursor-animation.spec.ts
+4. e2e/02-target-lock.spec.ts
+5. e2e/03-semantic-graph.spec.ts
+6. e2e/04-guide-mode.spec.ts
+7. e2e/05-voice-waveform.spec.ts
+8. e2e/06-onboarding.spec.ts
+9. e2e/07-screenshot-vision.spec.ts
+10. e2e/report.ts
+11. e2e/EVAL_REPORT.md (generated after run)
+12. Any SDK fixes needed to make tests pass
+
+Final state: npm run test:e2e passes with zero failures 
+(or known CI limitations documented in EVAL_REPORT.md).
+```
+**********************
+PowerShell transcript end
+End time: 20260607145005
+**********************

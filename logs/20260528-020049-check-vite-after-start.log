@@ -1,0 +1,66 @@
+**********************
+PowerShell transcript start
+Start time: 20260528020050
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$logPath = Join-Path 'C:\Users\jadha\clicky.ai\logs' "$timestamp-check-vite-after-start.log"
+Start-Transcript -Path $logPath -Force | Out-Null
+netstat -ano | Select-String ':5173|:5174'
+Get-ChildItem C:\Users\jadha\clicky.ai\logs\*vite-5173* | Sort-Object LastWriteTime -Descending | Select-Object -First 6 FullName,Length,LastWriteTime | Format-Table -AutoSize
+Get-Content (Get-ChildItem C:\Users\jadha\clicky.ai\logs\*vite-5173.out.log | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName -ErrorAction SilentlyContinue
+Get-Content (Get-ChildItem C:\Users\jadha\clicky.ai\logs\*vite-5173.err.log | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName -ErrorAction SilentlyContinue
+Stop-Transcript | Out-Null
+Get-Content $logPath
+Process ID: 21160
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+
+  TCP    127.0.0.1:5173         0.0.0.0:0              LISTENING       23292
+  TCP    127.0.0.1:5173         127.0.0.1:52036        FIN_WAIT_2      23292
+  TCP    127.0.0.1:5173         127.0.0.1:55243        FIN_WAIT_2      23292
+  TCP    127.0.0.1:5173         127.0.0.1:56219        ESTABLISHED     23292
+  TCP    127.0.0.1:5173         127.0.0.1:56319        FIN_WAIT_2      23292
+  TCP    127.0.0.1:5173         127.0.0.1:61752        FIN_WAIT_2      23292
+  TCP    127.0.0.1:5173         127.0.0.1:62061        FIN_WAIT_2      23292
+  TCP    127.0.0.1:5173         127.0.0.1:63784        FIN_WAIT_2      23292
+  TCP    127.0.0.1:52036        127.0.0.1:5173         CLOSE_WAIT      20184
+  TCP    127.0.0.1:55243        127.0.0.1:5173         CLOSE_WAIT      20184
+  TCP    127.0.0.1:56219        127.0.0.1:5173         ESTABLISHED     20184
+  TCP    127.0.0.1:56319        127.0.0.1:5173         CLOSE_WAIT      20184
+  TCP    127.0.0.1:61752        127.0.0.1:5173         CLOSE_WAIT      20184
+  TCP    127.0.0.1:62061        127.0.0.1:5173         CLOSE_WAIT      20184
+  TCP    127.0.0.1:63784        127.0.0.1:5173         CLOSE_WAIT      20184
+
+
+FullName                                                                Length LastWriteTime
+--------                                                                ------ -------------
+C:\Users\jadha\clicky.ai\logs\20260528-020031-start-vite-5173-clean.log   3324 28-05-2026 02:00:36
+C:\Users\jadha\clicky.ai\logs\20260528-020031-vite-5173.out.log            338 28-05-2026 02:00:32
+C:\Users\jadha\clicky.ai\logs\20260528-020031-vite-5173.err.log              0 28-05-2026 02:00:31
+C:\Users\jadha\clicky.ai\logs\20260528-015853-restart-vite-5173.log       2958 28-05-2026 01:58:53
+
+
+> @clicky/web-sdk@0.1.0 dev
+> vite --host 127.0.0.1 --port 5173 --host 127.0.0.1 --strictPort
+
+
+  VITE v5.4.21  ready in 420 ms
+
+  ➜  Local:   http://127.0.0.1:5173/
+  ➜  press h + enter to show help
+**********************
+PowerShell transcript end
+End time: 20260528020050
+**********************

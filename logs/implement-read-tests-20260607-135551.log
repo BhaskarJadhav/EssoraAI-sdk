@@ -1,0 +1,115 @@
+**********************
+PowerShell transcript start
+Start time: 20260607135551
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $logDir = Join-Path 'C:\Users\jadha\clicky.ai' 'logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $logPath = Join-Path $logDir "implement-read-tests-$timestamp.log"; Start-Transcript -Path $logPath -Force | Out-Null; Write-Host "LOG_PATH=$logPath"; Get-Content .\clicky-web-sdk\src\test\realtime.test.ts -Raw; Get-Content .\clicky-web-sdk\src\test\core.test.ts -Raw; Stop-Transcript | Out-Null
+Process ID: 24376
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+LOG_PATH=C:\Users\jadha\clicky.ai\logs\implement-read-tests-20260607-135551.log
+import { describe, expect, it, vi } from "vitest";
+import { LocalGuidanceEngine } from "../core/LocalGuidanceEngine";
+import type { ClickyCapturedContext } from "../core/types";
+import { SemanticMapObserver } from "../context/SemanticMapObserver";
+
+function createContext(): ClickyCapturedContext {
+  return {
+    semanticMapVersion: 1,
+    appName: "Demo",
+    tenantId: "tenant",
+    userId: "user",
+    sessionId: "session",
+    url: "https://example.com",
+    title: "Demo",
+    viewport: { width: 1000, height: 800, scrollX: 0, scrollY: 0 },
+    pageText: "Dashboard Create invoice Search",
+    capturedAt: new Date().toISOString(),
+    screenshots: [],
+    elements: [
+      {
+        id: "dashboard-id",
+        tagName: "button",
+        label: "Dashboard",
+        text: "Dashboard",
+        selector: "button:nth-of-type(1)",
+        bounds: { x: 10, y: 10, width: 100, height: 40 },
+        isInteractive: true
+      }
+    ]
+  };
+}
+
+describe("realtime guidance", () => {
+  it("creates a local fallback response with a point target", () => {
+    const response = new LocalGuidanceEngine().createFallbackResponse(
+      "where is the dashboard",
+      createContext(),
+      new Error("backend down")
+    );
+
+    expect(response).toContain("[POINT:dashboard-id:Dashboard]");
+  });
+
+  it("emits semantic changes from DOM mutations", async () => {
+    document.body.innerHTML = "<main><button>Dashboard</button></main>";
+    const onChanged = vi.fn();
+    const observer = new SemanticMapObserver(onChanged);
+    observer.start();
+    document.body.querySelector("button")!.setAttribute("aria-label", "Main dashboard");
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    observer.stop();
+    expect(onChanged).toHaveBeenCalled();
+  });
+});
+import { describe, expect, it, vi } from "vitest";
+import { EventBus } from "../core/EventBus";
+import { StateMachine } from "../core/StateMachine";
+import { normalizeOptions } from "../core/Config";
+
+describe("core runtime", () => {
+  it("normalizes required options with stable defaults", () => {
+    const options = normalizeOptions({
+      workerBaseUrl: "https://example.com/",
+      appName: "Demo"
+    });
+
+    expect(options.workerBaseUrl).toBe("https://example.com");
+    expect(options.enableVoice).toBe(true);
+    expect(options.contextMode).toBe("dom-first");
+  });
+
+  it("emits typed events and unsubscribes", () => {
+    const eventBus = new EventBus();
+    const handler = vi.fn();
+    const unsubscribe = eventBus.on("mic:start", handler);
+    eventBus.emit("mic:start", undefined);
+    unsubscribe();
+    eventBus.emit("mic:start", undefined);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("guards invalid state transitions", () => {
+    const stateMachine = new StateMachine(new EventBus());
+    expect(() => stateMachine.setState("speaking")).toThrow();
+    stateMachine.setState("listening");
+    stateMachine.setState("transcribing");
+    stateMachine.setState("capturing-context");
+    expect(stateMachine.getState()).toBe("capturing-context");
+  });
+});
+**********************
+PowerShell transcript end
+End time: 20260607135551
+**********************

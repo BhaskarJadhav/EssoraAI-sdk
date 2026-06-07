@@ -1,0 +1,33 @@
+**********************
+PowerShell transcript start
+Start time: 20260607153620
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$ErrorActionPreference='Stop'
+$repo='C:\Users\jadha\clicky.ai'
+$log=Join-Path $repo ("logs\final-status-diff-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".log")
+Start-Transcript -Path $log -Force | Out-Null
+Set-Location $repo
+if (Test-Path .git) { git status --short; git diff --stat } else { Write-Output 'No root .git repository found'; Get-ChildItem -Path clicky-web-sdk -Force | Select-Object Name }
+Stop-Transcript | Out-Null
+Write-Output "Logged final status to $log"
+Process ID: 26196
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+No root .git repository found
+
+**********************
+PowerShell transcript end
+End time: 20260607153620
+**********************

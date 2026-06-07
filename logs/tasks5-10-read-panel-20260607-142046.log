@@ -1,0 +1,379 @@
+**********************
+PowerShell transcript start
+Start time: 20260607142046
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $logDir = Join-Path 'C:\Users\jadha\clicky.ai' 'logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $logPath = Join-Path $logDir "tasks5-10-read-panel-$timestamp.log"; Start-Transcript -Path $logPath -Force | Out-Null; Write-Host "LOG_PATH=$logPath"; Get-Content .\clicky-web-sdk\src\panel\CompanionPanel.ts -Raw; Get-Content .\clicky-web-sdk\src\panel\MicButton.ts -Raw; Get-Content .\clicky-web-sdk\src\panel\PanelRoot.ts -Raw; Get-Content .\clicky-web-sdk\src\panel\panelStyles.ts -Raw; Stop-Transcript | Out-Transcript | Out-Null
+Process ID: 19080
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+LOG_PATH=C:\Users\jadha\clicky.ai\logs\tasks5-10-read-panel-20260607-142046.log
+import type { ClickyState } from "../core/types";
+import { createMicButton } from "./MicButton";
+import { createPermissionStatus } from "./PermissionStatus";
+
+export type CompanionPanelHandlers = {
+  onSendText(text: string): void;
+  onStartTalk(): void;
+  onStopTalk(): void;
+  onConfirmAction(): void;
+  onRejectAction(): void;
+};
+
+export class CompanionPanel {
+  readonly element: HTMLElement;
+  readonly micButton: HTMLButtonElement;
+  private readonly stateElement: HTMLElement;
+  private readonly threadElement: HTMLElement;
+  private readonly inputElement: HTMLInputElement;
+  private readonly confirmElement: HTMLElement;
+
+  constructor(private readonly handlers: CompanionPanelHandlers) {
+    this.element = document.createElement("section");
+    this.element.className = "clicky-panel";
+
+    const headerElement = document.createElement("header");
+    headerElement.className = "clicky-panel-header";
+    const titleElement = document.createElement("div");
+    titleElement.className = "clicky-title";
+    titleElement.textContent = "Clicky";
+    this.stateElement = createPermissionStatus();
+    headerElement.append(titleElement, this.stateElement);
+
+    this.threadElement = document.createElement("div");
+    this.threadElement.className = "clicky-thread";
+    this.threadElement.innerHTML = `<p class="clicky-message clicky-message-assistant">Ask about this page, or hold ctrl + option while the page is focused.</p>`;
+
+    this.confirmElement = this.createConfirmElement();
+
+    const footerElement = document.createElement("footer");
+    footerElement.className = "clicky-panel-footer";
+    const inputRow = document.createElement("form");
+    inputRow.className = "clicky-input-row";
+    this.inputElement = document.createElement("input");
+    this.inputElement.className = "clicky-input";
+    this.inputElement.placeholder = "Ask Clicky";
+    this.micButton = createMicButton();
+    const sendButton = document.createElement("button");
+    sendButton.className = "clicky-button";
+    sendButton.type = "submit";
+    sendButton.textContent = "Send";
+    inputRow.append(this.inputElement, this.micButton, sendButton);
+    footerElement.append(inputRow);
+
+    inputRow.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const text = this.inputElement.value.trim();
+      if (!text) {
+        return;
+      }
+      this.inputElement.value = "";
+      this.handlers.onSendText(text);
+    });
+
+    this.micButton.addEventListener("pointerdown", () => this.handlers.onStartTalk());
+    this.micButton.addEventListener("pointerup", () => this.handlers.onStopTalk());
+    this.micButton.addEventListener("pointercancel", () => this.handlers.onStopTalk());
+
+    this.element.append(headerElement, this.threadElement, this.confirmElement, footerElement);
+  }
+
+  setOpen(isOpen: boolean): void {
+    this.element.classList.toggle("is-open", isOpen);
+  }
+
+  setState(state: ClickyState): void {
+    this.stateElement.textContent = state;
+    this.micButton.classList.toggle("is-listening", state === "listening");
+  }
+
+  appendMessage(role: "user" | "assistant", text: string): void {
+    const messageElement = document.createElement("p");
+    messageElement.className = `clicky-message clicky-message-${role}`;
+    messageElement.textContent = `${role === "user" ? "You" : "Clicky"}: ${text}`;
+    this.threadElement.appendChild(messageElement);
+    this.threadElement.scrollTop = this.threadElement.scrollHeight;
+  }
+
+  updateStreamingAssistantMessage(text: string): void {
+    let messageElement = this.threadElement.querySelector<HTMLElement>("[data-clicky-streaming-message='true']");
+    if (!messageElement) {
+      messageElement = document.createElement("p");
+      messageElement.dataset.clickyStreamingMessage = "true";
+      messageElement.className = "clicky-message clicky-message-assistant";
+      this.threadElement.appendChild(messageElement);
+    }
+    messageElement.textContent = `Clicky: ${text}`;
+    this.threadElement.scrollTop = this.threadElement.scrollHeight;
+  }
+
+  finishStreamingAssistantMessage(text: string): void {
+    const messageElement = this.threadElement.querySelector<HTMLElement>("[data-clicky-streaming-message='true']");
+    if (messageElement) {
+      delete messageElement.dataset.clickyStreamingMessage;
+      messageElement.textContent = `Clicky: ${text}`;
+    } else {
+      this.appendMessage("assistant", text);
+    }
+  }
+
+  showActionConfirmation(actionName: string): void {
+    this.confirmElement.querySelector("[data-clicky-confirm-text]")!.textContent = `Run action: ${actionName}?`;
+    this.confirmElement.classList.add("is-visible");
+  }
+
+  hideActionConfirmation(): void {
+    this.confirmElement.classList.remove("is-visible");
+  }
+
+  private createConfirmElement(): HTMLElement {
+    const confirmElement = document.createElement("div");
+    confirmElement.className = "clicky-confirm";
+    const textElement = document.createElement("span");
+    textElement.dataset.clickyConfirmText = "true";
+    const confirmButton = document.createElement("button");
+    confirmButton.className = "clicky-button";
+    confirmButton.type = "button";
+    confirmButton.textContent = "Run";
+    const rejectButton = document.createElement("button");
+    rejectButton.className = "clicky-button";
+    rejectButton.type = "button";
+    rejectButton.textContent = "Cancel";
+    confirmButton.addEventListener("click", () => this.handlers.onConfirmAction());
+    rejectButton.addEventListener("click", () => this.handlers.onRejectAction());
+    confirmElement.append(textElement, confirmButton, rejectButton);
+    return confirmElement;
+  }
+}
+export function createMicButton(): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.className = "clicky-button clicky-mic";
+  button.type = "button";
+  button.title = "Push to talk";
+  button.textContent = "Mic";
+  return button;
+}
+import { EventBus } from "../core/EventBus";
+import type { NormalizedClickyOptions } from "../core/types";
+import { createShadowRootMount, type ShadowRootMount } from "../shared/ShadowDom";
+import { CompanionPanel, type CompanionPanelHandlers } from "./CompanionPanel";
+import { createLauncherButton } from "./LauncherButton";
+import { createPanelStyles } from "./panelStyles";
+
+export class PanelRoot {
+  private readonly mount: ShadowRootMount;
+  private readonly rootElement: HTMLElement;
+  private readonly launcherButton: HTMLButtonElement;
+  readonly companionPanel: CompanionPanel;
+  private isOpen = false;
+
+  constructor(
+    options: NormalizedClickyOptions,
+    eventBus: EventBus,
+    handlers: CompanionPanelHandlers
+  ) {
+    this.mount = createShadowRootMount(options.mountElement, "clicky-panel-host");
+    const styleElement = document.createElement("style");
+    styleElement.textContent = createPanelStyles(options);
+    this.rootElement = document.createElement("div");
+    this.rootElement.className = "clicky-panel-root";
+    this.launcherButton = createLauncherButton();
+    this.companionPanel = new CompanionPanel(handlers);
+    this.rootElement.append(this.companionPanel.element, this.launcherButton);
+    this.mount.shadowRoot.append(styleElement, this.rootElement);
+
+    this.launcherButton.addEventListener("click", () => {
+      this.setOpen(!this.isOpen);
+    });
+
+    eventBus.on("state:changed", ({ nextState }) => this.companionPanel.setState(nextState));
+    eventBus.on("assistant:token", ({ fullText }) => this.companionPanel.updateStreamingAssistantMessage(fullText));
+    eventBus.on("assistant:done", ({ spokenText }) => this.companionPanel.finishStreamingAssistantMessage(spokenText));
+    eventBus.on("action:proposed", ({ action }) => this.companionPanel.showActionConfirmation(action.definition.name));
+    eventBus.on("action:executed", ({ result }) => {
+      this.companionPanel.hideActionConfirmation();
+      this.companionPanel.appendMessage("assistant", result.message ?? (result.ok ? "Done." : "Action failed."));
+    });
+    eventBus.on("action:failed", ({ error }) => {
+      this.companionPanel.hideActionConfirmation();
+      this.companionPanel.appendMessage("assistant", error.message);
+    });
+  }
+
+  open(): void {
+    this.setOpen(true);
+  }
+
+  close(): void {
+    this.setOpen(false);
+  }
+
+  destroy(): void {
+    this.mount.hostElement.remove();
+  }
+
+  private setOpen(isOpen: boolean): void {
+    this.isOpen = isOpen;
+    this.companionPanel.setOpen(isOpen);
+  }
+}
+import type { NormalizedClickyOptions } from "../core/types";
+import { createDesignSystemCss } from "../shared/DesignSystem";
+
+export function createPanelStyles(options: NormalizedClickyOptions): string {
+  return `
+    ${createDesignSystemCss(options)}
+
+    .clicky-panel-root {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: calc(var(--clicky-z-index) + 1);
+      color: var(--clicky-text);
+    }
+
+    .clicky-launcher {
+      width: 46px;
+      height: 46px;
+      border: 1px solid var(--clicky-border);
+      border-radius: 50%;
+      background: var(--clicky-accent);
+      color: white;
+      box-shadow: var(--clicky-shadow);
+      font-weight: 800;
+    }
+
+    .clicky-panel {
+      display: none;
+      width: min(380px, calc(100vw - 40px));
+      margin-bottom: 12px;
+      border: 1px solid var(--clicky-border);
+      border-radius: var(--clicky-radius);
+      background: var(--clicky-panel-bg);
+      box-shadow: var(--clicky-shadow);
+      overflow: hidden;
+    }
+
+    .clicky-panel.is-open {
+      display: block;
+    }
+
+    .clicky-panel-header,
+    .clicky-panel-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px;
+      border-bottom: 1px solid var(--clicky-border);
+    }
+
+    .clicky-panel-footer {
+      border-top: 1px solid var(--clicky-border);
+      border-bottom: 0;
+    }
+
+    .clicky-title {
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .clicky-state {
+      color: var(--clicky-muted);
+      font-size: 12px;
+    }
+
+    .clicky-thread {
+      max-height: 260px;
+      overflow: auto;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .clicky-message {
+      margin: 0 0 10px;
+      white-space: pre-wrap;
+    }
+
+    .clicky-message-user {
+      color: rgba(248, 251, 255, 0.78);
+    }
+
+    .clicky-message-assistant {
+      color: var(--clicky-text);
+    }
+
+    .clicky-input-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .clicky-input {
+      min-width: 0;
+      border: 1px solid var(--clicky-border);
+      border-radius: var(--clicky-radius);
+      padding: 9px 10px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--clicky-text);
+    }
+
+    .clicky-button {
+      border: 1px solid var(--clicky-border);
+      border-radius: var(--clicky-radius);
+      padding: 9px 10px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--clicky-text);
+    }
+
+    .clicky-button:hover,
+    .clicky-launcher:hover {
+      filter: brightness(1.08);
+    }
+
+    .clicky-mic.is-listening {
+      background: var(--clicky-accent);
+    }
+
+    .clicky-confirm {
+      display: none;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 12px;
+      border-top: 1px solid var(--clicky-border);
+      background: rgba(255, 255, 255, 0.05);
+      font-size: 12px;
+    }
+
+    .clicky-confirm.is-visible {
+      display: flex;
+    }
+  `;
+}
+Out-Transcript: 
+Line |
+   2 |  … c\panel\panelStyles.ts -Raw; Stop-Transcript | Out-Transcript | Out-N …
+     |                                                   ~~~~~~~~~~~~~~
+     | The term 'Out-Transcript' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+Out-Transcript: 
+Line |
+   2 |  … c\panel\panelStyles.ts -Raw; Stop-Transcript | Out-Transcript | Out-N …
+     |                                                   ~~~~~~~~~~~~~~
+     | The term 'Out-Transcript' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+PS>$global:?
+False

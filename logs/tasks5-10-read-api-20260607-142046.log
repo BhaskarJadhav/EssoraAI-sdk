@@ -1,0 +1,326 @@
+**********************
+PowerShell transcript start
+Start time: 20260607142046
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $logDir = Join-Path 'C:\Users\jadha\clicky.ai' 'logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $logPath = Join-Path $logDir "tasks5-10-read-api-$timestamp.log"; Start-Transcript -Path $logPath -Force | Out-Null; Write-Host "LOG_PATH=$logPath"; Get-Content .\clicky-web-sdk\src\api\AssemblyAIClient.ts -Raw; Get-Content .\clicky-web-sdk\src\api\ElevenLabsClient.ts -Raw; Get-Content .\clicky-web-sdk\src\api\SpeechUploadClient.ts -Raw; Get-Content .\clicky-web-sdk\src\api\HealthClient.ts -Raw; Stop-Transcript | Out-Null
+Process ID: 20456
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+LOG_PATH=C:\Users\jadha\clicky.ai\logs\tasks5-10-read-api-20260607-142046.log
+import { EventBus } from "../core/EventBus";
+import type { NormalizedClickyOptions } from "../core/types";
+import { WorkerProxy } from "./WorkerProxy";
+import { Logger } from "../utils/logger";
+
+type AssemblyAITokenResponse = {
+  token: string;
+  provider?: "assemblyai" | "deepgram" | "deepgram-proxy";
+  websocketUrl?: string;
+};
+
+export class AssemblyAIClient {
+  private websocket?: WebSocket;
+  private readonly logger = new Logger("ClickySTT", "info");
+  private partialCount = 0;
+  private finalCount = 0;
+  private latestTranscript = "";
+  private latestFinalTranscript = "";
+  private provider: AssemblyAITokenResponse["provider"];
+
+  constructor(
+    private readonly workerProxy: WorkerProxy,
+    private readonly eventBus: EventBus,
+    private readonly options: NormalizedClickyOptions
+  ) {}
+
+  async connect(sampleRate: number): Promise<void> {
+    this.logger.info("stt.connect.start", { sampleRate });
+    const tokenResponse = await this.workerProxy.postJson<AssemblyAITokenResponse>(this.options.apiRoutes.sttToken, {});
+    this.provider = tokenResponse.provider;
+    this.latestTranscript = "";
+    this.latestFinalTranscript = "";
+    this.partialCount = 0;
+    this.finalCount = 0;
+    const websocketUrl =
+      tokenResponse.provider === "deepgram" || tokenResponse.provider === "deepgram-proxy"
+        ? this.createDeepgramWebsocketUrl(tokenResponse, sampleRate)
+        : this.createAssemblyAIWebsocketUrl(tokenResponse, sampleRate);
+
+    this.websocket = new WebSocket(websocketUrl);
+    this.websocket.binaryType = "arraybuffer";
+    this.websocket.onmessage = (event) => this.handleMessage(event);
+    this.websocket.onerror = () => {
+      this.logger.error("stt.websocket.error");
+      this.eventBus.emit("error", { error: new Error("Speech websocket error") });
+    };
+    this.websocket.onclose = (event) => {
+      this.logger.warn("stt.websocket.closed", { code: event.code, reason: event.reason || "unknown" });
+    };
+
+    await new Promise<void>((resolve, reject) => {
+      if (!this.websocket) {
+        reject(new Error("Speech websocket was not created"));
+        return;
+      }
+
+      let didOpen = false;
+      this.websocket.addEventListener("open", () => {
+        didOpen = true;
+        this.logger.info("stt.websocket.connected", { provider: tokenResponse.provider ?? "assemblyai" });
+        resolve();
+      });
+      this.websocket.addEventListener("close", () => {
+        if (!didOpen) {
+          reject(new Error("Speech websocket closed before opening"));
+        }
+      });
+    });
+  }
+
+  sendAudioFrame(pcm16: Int16Array): void {
+    if (this.websocket?.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    this.websocket.send(pcm16.buffer.slice(pcm16.byteOffset, pcm16.byteOffset + pcm16.byteLength));
+  }
+
+  close(): void {
+    if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+      this.websocket.send(JSON.stringify({ type: this.provider === "assemblyai" ? "Terminate" : "CloseStream" }));
+    }
+    this.websocket?.close();
+    this.websocket = undefined;
+    this.logger.info("stt.websocket.terminated");
+  }
+
+  async finishTurn(): Promise<void> {
+    if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
+      this.emitLatestTranscriptAsFinal("websocket not open");
+      this.close();
+      return;
+    }
+
+    this.websocket.send(JSON.stringify({ type: this.provider === "assemblyai" ? "Terminate" : "CloseStream" }));
+    await new Promise((resolve) => window.setTimeout(resolve, 700));
+    this.emitLatestTranscriptAsFinal("finish timeout");
+    this.websocket.close();
+    this.websocket = undefined;
+    this.logger.info("stt.websocket.finished");
+  }
+
+  private handleMessage(event: MessageEvent): void {
+    if (typeof event.data !== "string") {
+      return;
+    }
+
+    try {
+      const message = JSON.parse(event.data) as {
+        type?: string;
+        transcript?: string;
+        channel?: { alternatives?: Array<{ transcript?: string }> };
+        is_final?: boolean;
+        speech_final?: boolean;
+      };
+
+      const transcript = message.transcript ?? message.channel?.alternatives?.[0]?.transcript ?? "";
+      if (!transcript) {
+        return;
+      }
+
+      this.latestTranscript = transcript;
+      if (message.type === "Turn" || message.type === "FinalTranscript" || message.is_final || message.speech_final) {
+        this.latestFinalTranscript = transcript;
+        this.finalCount += 1;
+        this.logger.info("stt.transcript.final", { length: transcript.length, count: this.finalCount });
+        this.eventBus.emit("transcript:final", { text: transcript });
+      } else {
+        this.partialCount += 1;
+        if (this.partialCount % 5 === 0) {
+          this.logger.info("stt.transcript.partial", { length: transcript.length, count: this.partialCount });
+        }
+        this.eventBus.emit("transcript:partial", { text: transcript });
+      }
+    } catch {
+      this.logger.error("stt.message.parse_failed");
+      this.eventBus.emit("error", { error: new Error("Could not parse AssemblyAI message") });
+    }
+  }
+
+  private createAssemblyAIWebsocketUrl(tokenResponse: AssemblyAITokenResponse, sampleRate: number): URL {
+    const websocketUrl = new URL("wss://streaming.assemblyai.com/v3/ws");
+    websocketUrl.searchParams.set("sample_rate", String(sampleRate));
+    websocketUrl.searchParams.set("formatted_finals", "true");
+    websocketUrl.searchParams.set("token", tokenResponse.token);
+    return websocketUrl;
+  }
+
+  private createDeepgramWebsocketUrl(tokenResponse: AssemblyAITokenResponse, sampleRate: number): URL {
+    const websocketUrl = new URL(tokenResponse.websocketUrl ?? "wss://api.deepgram.com/v1/listen");
+    websocketUrl.searchParams.set("sample_rate", String(sampleRate));
+    if (tokenResponse.token) {
+      websocketUrl.searchParams.set("token", tokenResponse.token);
+    }
+    return websocketUrl;
+  }
+
+  private emitLatestTranscriptAsFinal(reason: string): void {
+    const transcript = (this.latestFinalTranscript || this.latestTranscript).trim();
+    if (!transcript) {
+      this.logger.warn("stt.transcript.flush_empty", { reason });
+      return;
+    }
+
+    if (transcript === this.latestFinalTranscript && this.finalCount > 0) {
+      return;
+    }
+
+    this.latestFinalTranscript = transcript;
+    this.finalCount += 1;
+    this.logger.info("stt.transcript.final.flush", { length: transcript.length, count: this.finalCount, reason });
+    this.eventBus.emit("transcript:final", { text: transcript });
+  }
+}
+import { EventBus } from "../core/EventBus";
+import type { NormalizedClickyOptions } from "../core/types";
+import { WorkerProxy } from "./WorkerProxy";
+import { AudioPlayer } from "../audio/AudioPlayer";
+import { Logger } from "../utils/logger";
+
+export class ElevenLabsClient {
+  private readonly logger = new Logger("ClickyTTS", "info");
+
+  constructor(
+    private readonly workerProxy: WorkerProxy,
+    private readonly audioPlayer: AudioPlayer,
+    private readonly eventBus: EventBus,
+    private readonly options: NormalizedClickyOptions
+  ) {}
+
+  async speak(text: string): Promise<void> {
+    const cleanedText = text.trim();
+    if (!cleanedText) {
+      return;
+    }
+
+    this.eventBus.emit("tts:start", undefined);
+    this.logger.info("tts.request.start", { length: cleanedText.length });
+    try {
+      const audioBuffer = await this.workerProxy.postBinary(this.options.apiRoutes.tts, {
+        text: cleanedText,
+        googleLanguageCode: "en-US",
+        googleVoiceName: "en-US-Chirp3-HD-Zephyr",
+        googleSpeakingRate: 0.96,
+        googlePitch: 0,
+        googleVolumeGainDb: 0,
+        googleEffectsProfileId: "headphone-class-device",
+        modelId: "eleven_flash_v2_5"
+      });
+      this.logger.info("tts.response.received", { bytes: audioBuffer.byteLength });
+      await this.audioPlayer.play(audioBuffer);
+    } finally {
+      this.eventBus.emit("tts:end", undefined);
+      this.logger.info("tts.request.end");
+    }
+  }
+}
+import type { NormalizedClickyOptions } from "../core/types";
+import { WorkerProxy } from "./WorkerProxy";
+
+type DeepgramUploadResponse = {
+  success?: boolean;
+  provider?: string;
+  transcript?: string;
+  result?: {
+    results?: {
+      channels?: Array<{
+        alternatives?: Array<{
+          transcript?: string;
+        }>;
+      }>;
+    };
+  };
+};
+
+export class SpeechUploadClient {
+  constructor(
+    private readonly workerProxy: WorkerProxy,
+    private readonly options: NormalizedClickyOptions
+  ) {}
+
+  async transcribeWavBase64(audioBase64: string, sampleRateHertz = 16000): Promise<{
+    transcript: string;
+    provider?: string;
+  }> {
+    const response = await this.workerProxy.postJson<DeepgramUploadResponse>(this.options.apiRoutes.sttUpload, {
+      audioBase64,
+      contentType: "audio/wav",
+      sampleRateHertz,
+      languageCode: "en-US"
+    });
+
+    return {
+      provider: response.provider,
+      transcript:
+      response.transcript?.trim() ??
+      response.result?.results?.channels?.[0]?.alternatives?.[0]?.transcript?.trim() ?? ""
+    };
+  }
+}
+import type { ClickyHealthReport, NormalizedClickyOptions } from "../core/types";
+import { WorkerProxy } from "./WorkerProxy";
+
+export class HealthClient {
+  constructor(
+    private readonly workerProxy: WorkerProxy,
+    private readonly options: NormalizedClickyOptions
+  ) {}
+
+  async check(): Promise<ClickyHealthReport> {
+    try {
+      const rawHealth = await this.workerProxy.getJson<
+        ClickyHealthReport | { success?: boolean; services?: Record<string, boolean>; error?: string }
+      >(this.options.apiRoutes.health);
+
+      if (isProductionHealthReport(rawHealth)) {
+        const services = rawHealth.services ?? {};
+        return {
+          ok: rawHealth.success ?? Object.values(services).every(Boolean),
+          providers: Object.fromEntries(
+            Object.entries(services).map(([serviceName, isConfigured]) => [serviceName, isConfigured ? "configured" : "missing"])
+          ),
+          error: rawHealth.error
+        };
+      }
+
+      return rawHealth as ClickyHealthReport;
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+}
+
+function isProductionHealthReport(
+  healthReport: ClickyHealthReport | { success?: boolean; services?: Record<string, boolean>; error?: string }
+): healthReport is { success?: boolean; services?: Record<string, boolean>; error?: string } {
+  return "success" in healthReport || "services" in healthReport;
+}
+**********************
+PowerShell transcript end
+End time: 20260607142046
+**********************

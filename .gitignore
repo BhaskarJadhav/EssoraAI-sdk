@@ -1,0 +1,11 @@
+worker/node_modules/
+clicky-web-sdk/node_modules/
+clicky-web-sdk/dist/
+clicky-web-sdk/.env.local
+worker/.dev.vars
+.DS_Store
+*.xcuserstate
+build/
+releases/
+.claude/
+coding-plans/

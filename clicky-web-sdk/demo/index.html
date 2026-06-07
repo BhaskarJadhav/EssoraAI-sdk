@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Clicky Web SDK Demo</title>
+    <link rel="stylesheet" href="/demo/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell" data-clicky-context="Demo SaaS dashboard">
+      <nav class="sidebar" aria-label="Primary">
+        <strong>Acme CRM</strong>
+        <button data-clicky-label="Dashboard navigation">Dashboard</button>
+        <button data-clicky-label="Customers navigation">Customers</button>
+        <button data-clicky-label="Billing navigation">Billing</button>
+        <a href="#docs" data-clicky-label="Docs navigation">Docs</a>
+      </nav>
+
+      <section class="content">
+        <header class="toolbar">
+          <div>
+            <h1>Pipeline Review</h1>
+            <p>Review high-value accounts and next steps.</p>
+          </div>
+          <button id="create-invoice" data-target="create-invoice" data-clicky-label="Create invoice">Create invoice</button>
+        </header>
+
+        <section class="metric-grid" aria-label="Pipeline metrics">
+          <article>
+            <span>Open pipeline</span>
+            <strong>$482K</strong>
+          </article>
+          <article>
+            <span>At risk</span>
+            <strong>7 accounts</strong>
+          </article>
+          <article>
+            <span>Due today</span>
+            <strong>14 tasks</strong>
+          </article>
+        </section>
+
+        <form class="search-row" role="search">
+          <label for="customer-search">Find a customer</label>
+          <input id="customer-search" placeholder="Search accounts" />
+          <button type="button" id="submit-search">Search</button>
+        </form>
+
+        <table aria-label="Accounts table">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>Stage</th>
+              <th>Owner</th>
+              <th>Next step</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Northstar Labs</td>
+              <td>Security review</td>
+              <td>Maya</td>
+              <td><button data-clicky-label="Schedule Northstar follow-up">Schedule follow-up</button></td>
+            </tr>
+            <tr>
+              <td>BrightBank</td>
+              <td>Procurement</td>
+              <td>Jules</td>
+              <td><button data-clicky-label="Open BrightBank procurement notes">Open notes</button></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <section class="diagnostics" aria-label="Clicky diagnostics" data-clicky-ignore>
+          <div>
+            <h2>Clicky Diagnostics</h2>
+            <p>Realtime SDK health, latency, targeting, and provider status.</p>
+          </div>
+          <pre id="clicky-diagnostics">{}</pre>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/demo/main.ts"></script>
+  </body>
+</html>

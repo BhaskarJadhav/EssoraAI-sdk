@@ -1,0 +1,527 @@
+**********************
+PowerShell transcript start
+Start time: 20260607145356
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$ErrorActionPreference='Stop'
+$repo='C:\Users\jadha\clicky.ai'
+$log=Join-Path $repo ("logs\read-guide-runtime-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".log")
+Start-Transcript -Path $log -Force | Out-Null
+Set-Location (Join-Path $repo 'clicky-web-sdk')
+Get-Content src\core\GuideModeRuntime.ts
+Get-Content src\context\SemanticGraph.ts
+Get-Content src\context\SemanticMapObserver.ts
+Get-Content src\context\ElementRegistry.ts
+Stop-Transcript | Out-Null
+Write-Output "Logged read to $log"
+Process ID: 29040
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+import { ClaudeClient } from "../api/ClaudeClient";
+import { ElevenLabsClient } from "../api/ElevenLabsClient";
+import { ContextCollector } from "../context/ContextCollector";
+import { OverlayRoot } from "../overlay/OverlayRoot";
+import { cleanAssistantResponse } from "../parsing/ResponseCleaner";
+import { EventBus } from "./EventBus";
+import { StateMachine } from "./StateMachine";
+import type { ClickyCapturedContext, ClickyGuideStep } from "./types";
+
+export type GuideModeRuntimeOptions = {
+  contextCollector: ContextCollector;
+  claudeClient: ClaudeClient;
+  elevenLabsClient: ElevenLabsClient;
+  overlayRoot: OverlayRoot;
+  stateMachine: StateMachine;
+  eventBus: EventBus;
+  applySemanticProviders(context: ClickyCapturedContext): Promise<void>;
+  appendAssistantMessage(text: string): void;
+  shouldSpeak(): boolean;
+};
+
+export class GuideModeRuntime {
+  private activeGoal?: string;
+  private activeSteps: ClickyGuideStep[] = [];
+  private cancelled = false;
+  private stepCompletedResolver?: () => void;
+
+  constructor(private readonly options: GuideModeRuntimeOptions) {}
+
+  async start(goal: string): Promise<void> {
+    this.cancel();
+    this.cancelled = false;
+    this.activeGoal = goal;
+    this.options.stateMachine.setState("guide-planning");
+    this.options.eventBus.emit("guide:started", { goal });
+
+    const planningContext = await this.captureContext();
+    this.activeSteps = await this.options.claudeClient.planGuide(goal, planningContext);
+    this.options.eventBus.emit("guide:planned", { goal, steps: this.activeSteps });
+
+    for (let stepIndex = 0; stepIndex < this.activeSteps.length; stepIndex += 1) {
+      if (this.cancelled) {
+        return;
+      }
+
+      const step = this.activeSteps[stepIndex];
+      const didCompleteStep = await this.runStep(goal, step, stepIndex, this.activeSteps.length);
+      if (!didCompleteStep) {
+        this.options.stateMachine.setState("guide-blocked");
+        this.options.eventBus.emit("guide:blocked", {
+          goal,
+          step,
+          reason: "step timed out after recovery attempts"
+        });
+        return;
+      }
+    }
+
+    this.options.stateMachine.setState("guide-completed");
+    this.options.eventBus.emit("guide:completed", { goal, steps: this.activeSteps });
+    this.options.appendAssistantMessage("done, the workflow is complete.");
+    this.options.stateMachine.setState("idle");
+    this.activeGoal = undefined;
+    this.activeSteps = [];
+  }
+
+  stepCompleted(): void {
+    this.stepCompletedResolver?.();
+    this.stepCompletedResolver = undefined;
+  }
+
+  cancel(): void {
+    this.cancelled = true;
+    this.stepCompleted();
+    this.activeGoal = undefined;
+    this.activeSteps = [];
+  }
+
+  private async runStep(
+    goal: string,
+    step: ClickyGuideStep,
+    stepIndex: number,
+    totalSteps: number
+  ): Promise<boolean> {
+    for (let recoveryAttempt = 0; recoveryAttempt <= 2; recoveryAttempt += 1) {
+      if (this.cancelled) {
+        return false;
+      }
+
+      this.options.stateMachine.setState(recoveryAttempt === 0 ? "guide-step-active" : "guide-recovering");
+      if (recoveryAttempt > 0) {
+        this.options.eventBus.emit("guide:recovery", { step, attempt: recoveryAttempt });
+      } else {
+        this.options.eventBus.emit("guide:step-started", { step, stepIndex, totalSteps });
+      }
+
+      const context = await this.captureContext();
+      const rawGuidance = await this.options.claudeClient.createGuideStepResponse({
+        goal,
+        step,
+        stepIndex,
+        totalSteps,
+        capturedContext: context,
+        isRecovery: recoveryAttempt > 0
+      });
+      const cleanedGuidance = cleanAssistantResponse(rawGuidance);
+      this.options.appendAssistantMessage(cleanedGuidance.spokenText);
+      this.options.overlayRoot.cursorOverlay.point(cleanedGuidance.pointCommand);
+
+      if (this.options.shouldSpeak() && cleanedGuidance.spokenText) {
+        await this.options.elevenLabsClient.speak(cleanedGuidance.spokenText);
+      }
+
+      this.options.stateMachine.setState("guide-step-watching");
+      const completed = await this.waitForStepCompletion();
+      if (completed) {
+        this.options.eventBus.emit("guide:step-completed", { step });
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private async captureContext(): Promise<ClickyCapturedContext> {
+    const context = await this.options.contextCollector.capture();
+    await this.options.applySemanticProviders(context);
+    this.options.eventBus.emit("context:captured", { context });
+    return context;
+  }
+
+  private async waitForStepCompletion(): Promise<boolean> {
+    return new Promise((resolve) => {
+      const timeoutId = window.setTimeout(() => {
+        this.stepCompletedResolver = undefined;
+        resolve(false);
+      }, 15000);
+
+      this.stepCompletedResolver = () => {
+        window.clearTimeout(timeoutId);
+        resolve(true);
+      };
+    });
+  }
+}
+import type { ClickySemanticNode, NormalizedClickyOptions } from "../core/types";
+import { isVisibleElement } from "../utils/dom";
+import { ElementRegistry } from "./ElementRegistry";
+import { Redaction } from "./Redaction";
+
+const interactableSelector = [
+  "a[href]",
+  "button",
+  "input",
+  "textarea",
+  "select",
+  "summary",
+  "[role='button']",
+  "[role='link']",
+  "[role='textbox']",
+  "[role='checkbox']",
+  "[role='radio']",
+  "[role='switch']",
+  "[role='menuitem']",
+  "[role='tab']",
+  "[tabindex]"
+].join(",");
+
+export class SemanticGraph {
+  private readonly redaction: Redaction;
+
+  constructor(
+    private readonly options: NormalizedClickyOptions,
+    private readonly elementRegistry: ElementRegistry
+  ) {
+    this.redaction = new Redaction(options);
+  }
+
+  build(): ClickySemanticNode[] {
+    const candidateElements = Array.from(document.body.querySelectorAll("*"));
+    const semanticNodes: ClickySemanticNode[] = [];
+    const stableIdCounts = new Map<string, number>();
+
+    for (const candidateElement of candidateElements) {
+      if (this.redaction.shouldIgnoreElement(candidateElement) || !isVisibleElement(candidateElement)) {
+        continue;
+      }
+
+      const semanticNode = this.createSemanticNode(candidateElement, stableIdCounts);
+      if (!semanticNode.name && !semanticNode.interactable) {
+        continue;
+      }
+      if (!this.isWithinContextWindow(semanticNode.bounds)) {
+        continue;
+      }
+
+      this.elementRegistry.registerElement(candidateElement, semanticNode.stableId);
+      semanticNodes.push(semanticNode);
+    }
+
+    return this.prioritizeNodes(semanticNodes);
+  }
+
+  private createSemanticNode(element: Element, stableIdCounts: Map<string, number>): ClickySemanticNode {
+    const role = this.inferRole(element);
+    const name = this.createAccessibleName(element);
+    const region = this.findRegionName(element);
+    const stableIdBase = this.createStableIdBase(role, name, region, element.tagName.toLowerCase());
+    const duplicateCount = stableIdCounts.get(stableIdBase) ?? 0;
+    stableIdCounts.set(stableIdBase, duplicateCount + 1);
+    const stableId = duplicateCount === 0 ? stableIdBase : `${stableIdBase}-${duplicateCount + 1}`;
+    const rect = element.getBoundingClientRect();
+    const isHidden = element.hasAttribute("hidden") || element.getAttribute("aria-hidden") === "true";
+
+    return {
+      stableId,
+      role,
+      name,
+      state: {
+        disabled: this.isDisabled(element),
+        hidden: isHidden,
+        checked: this.getAriaOrNativeBoolean(element, "checked"),
+        expanded: element.getAttribute("aria-expanded") === "true",
+        selected: this.getAriaOrNativeBoolean(element, "selected"),
+        required: this.getAriaOrNativeBoolean(element, "required")
+      },
+      region,
+      formGroup: this.findFormGroupName(element),
+      bounds: {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        visible: !isHidden && this.isRectInViewport(rect)
+      },
+      tagName: element.tagName.toLowerCase(),
+      interactable: this.isInteractable(element)
+    };
+  }
+
+  private createAccessibleName(element: Element): string {
+    const ariaLabel = element.getAttribute("aria-label")?.trim();
+    if (ariaLabel) {
+      return ariaLabel;
+    }
+
+    const labelledBy = element.getAttribute("aria-labelledby");
+    if (labelledBy) {
+      const labelText = labelledBy
+        .split(/\s+/)
+        .map((id) => document.getElementById(id)?.textContent?.trim())
+        .filter(Boolean)
+        .join(" ");
+      if (labelText) {
+        return labelText;
+      }
+    }
+
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
+      const explicitLabel = this.findExplicitLabel(element);
+      if (explicitLabel) {
+        return explicitLabel;
+      }
+      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+        return element.placeholder || element.name || element.type;
+      }
+      return element.name || "select";
+    }
+
+    return this.redaction.getSafeTextContent(element).slice(0, 120);
+  }
+
+  private inferRole(element: Element): string {
+    const explicitRole = element.getAttribute("role");
+    if (explicitRole) {
+      return explicitRole;
+    }
+
+    const tagName = element.tagName.toLowerCase();
+    if (tagName === "a") {
+      return "link";
+    }
+    if (tagName === "button" || tagName === "summary") {
+      return "button";
+    }
+    if (tagName === "textarea") {
+      return "textbox";
+    }
+    if (tagName === "select") {
+      return "combobox";
+    }
+    if (tagName === "input") {
+      return this.inferInputRole(element as HTMLInputElement);
+    }
+    if (/^h[1-6]$/.test(tagName)) {
+      return "heading";
+    }
+    if (["main", "nav", "aside", "header", "footer", "section", "article", "form"].includes(tagName)) {
+      return tagName;
+    }
+
+    return tagName;
+  }
+
+  private inferInputRole(inputElement: HTMLInputElement): string {
+    if (["checkbox", "radio", "range", "button", "submit", "reset"].includes(inputElement.type)) {
+      return inputElement.type === "submit" || inputElement.type === "reset" ? "button" : inputElement.type;
+    }
+    return "textbox";
+  }
+
+  private findRegionName(element: Element): string {
+    const regionElement = element.closest(
+      "main, nav, aside, header, footer, section, article, form, [role='main'], [role='navigation'], [role='region'], [role='dialog']"
+    );
+    if (!regionElement) {
+      return document.title || "page";
+    }
+
+    const labelledRegion = regionElement.getAttribute("aria-label")?.trim();
+    if (labelledRegion) {
+      return labelledRegion;
+    }
+
+    const headingElement = regionElement.querySelector("h1, h2, h3, h4, h5, h6");
+    return headingElement?.textContent?.replace(/\s+/g, " ").trim().slice(0, 120) || regionElement.tagName.toLowerCase();
+  }
+
+  private findFormGroupName(element: Element): string | null {
+    const fieldsetElement = element.closest("fieldset");
+    const legendText = fieldsetElement?.querySelector("legend")?.textContent?.replace(/\s+/g, " ").trim();
+    if (legendText) {
+      return legendText;
+    }
+
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
+      return this.findExplicitLabel(element);
+    }
+
+    return null;
+  }
+
+  private findExplicitLabel(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): string | null {
+    if (!element.id) {
+      return element.closest("label")?.textContent?.replace(/\s+/g, " ").trim() || null;
+    }
+
+    const escapedElementId = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(element.id) : element.id.replace(/["\\]/g, "\\$&");
+    return document.querySelector(`label[for="${escapedElementId}"]`)?.textContent?.replace(/\s+/g, " ").trim() || null;
+  }
+
+  private isInteractable(element: Element): boolean {
+    if (!(element instanceof HTMLElement)) {
+      return false;
+    }
+    return element.matches(interactableSelector) && !this.isDisabled(element);
+  }
+
+  private isDisabled(element: Element): boolean {
+    return (
+      element.hasAttribute("disabled") ||
+      element.getAttribute("aria-disabled") === "true" ||
+      !!element.closest("[disabled], [aria-disabled='true']")
+    );
+  }
+
+  private getAriaOrNativeBoolean(element: Element, name: "checked" | "selected" | "required"): boolean {
+    const ariaValue = element.getAttribute(`aria-${name}`);
+    if (ariaValue) {
+      return ariaValue === "true";
+    }
+    return name in element && Boolean((element as unknown as Record<string, unknown>)[name]);
+  }
+
+  private createStableIdBase(role: string, name: string, region: string, tagName: string): string {
+    const source = `${role}|${name}|${region}|${tagName}`.toLowerCase();
+    return `essora-${this.slugify(role)}-${this.slugify(name || tagName)}-${this.hashString(source)}`;
+  }
+
+  private slugify(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 36) || "node";
+  }
+
+  private hashString(value: string): string {
+    let hash = 0;
+    for (let index = 0; index < value.length; index += 1) {
+      hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+    }
+    return hash.toString(36);
+  }
+
+  private isWithinContextWindow(bounds: ClickySemanticNode["bounds"]): boolean {
+    const viewportHeight = Math.max(window.innerHeight, 1);
+    return bounds.y > -viewportHeight * 2 && bounds.y < viewportHeight * 3;
+  }
+
+  private isRectInViewport(rect: DOMRect): boolean {
+    return rect.bottom >= 0 && rect.right >= 0 && rect.top <= window.innerHeight && rect.left <= window.innerWidth;
+  }
+
+  private prioritizeNodes(nodes: ClickySemanticNode[]): ClickySemanticNode[] {
+    return nodes
+      .sort((leftNode, rightNode) => {
+        if (leftNode.interactable !== rightNode.interactable) {
+          return leftNode.interactable ? -1 : 1;
+        }
+        return this.distanceFromViewportCenter(leftNode) - this.distanceFromViewportCenter(rightNode);
+      })
+      .slice(0, 120);
+  }
+
+  private distanceFromViewportCenter(node: ClickySemanticNode): number {
+    const nodeCenterX = node.bounds.x + node.bounds.width / 2;
+    const nodeCenterY = node.bounds.y + node.bounds.height / 2;
+    return Math.hypot(nodeCenterX - window.innerWidth / 2, nodeCenterY - window.innerHeight / 2);
+  }
+}
+import { debounce } from "../utils/time";
+
+export type SemanticMapObserverHandler = () => void;
+
+export class SemanticMapObserver {
+  private mutationObserver?: MutationObserver;
+  private cleanupCallbacks: Array<() => void> = [];
+
+  constructor(private readonly onChanged: SemanticMapObserverHandler) {}
+
+  start(): void {
+    if (this.mutationObserver) {
+      return;
+    }
+
+    const debouncedChangeHandler = debounce(() => this.onChanged(), 120);
+    this.mutationObserver = new MutationObserver(() => debouncedChangeHandler());
+    this.mutationObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["aria-label", "role", "disabled", "hidden", "style", "class", "data-clicky-label"]
+    });
+
+    const scrollHandler = () => debouncedChangeHandler();
+    const resizeHandler = () => debouncedChangeHandler();
+    const routeHandler = () => debouncedChangeHandler();
+    window.addEventListener("scroll", scrollHandler, true);
+    window.addEventListener("resize", resizeHandler);
+    window.addEventListener("popstate", routeHandler);
+    this.cleanupCallbacks = [
+      () => window.removeEventListener("scroll", scrollHandler, true),
+      () => window.removeEventListener("resize", resizeHandler),
+      () => window.removeEventListener("popstate", routeHandler)
+    ];
+  }
+
+  stop(): void {
+    this.mutationObserver?.disconnect();
+    this.mutationObserver = undefined;
+    for (const cleanupCallback of this.cleanupCallbacks.splice(0)) {
+      cleanupCallback();
+    }
+  }
+}
+import { createUuid } from "../utils/uuid";
+
+export class ElementRegistry {
+  private readonly elementById = new Map<string, Element>();
+  private readonly idByElement = new WeakMap<Element, string>();
+
+  registerElement(element: Element, preferredElementId?: string): string {
+    const existingId = this.idByElement.get(element);
+    if (existingId) {
+      if (preferredElementId && preferredElementId !== existingId) {
+        this.idByElement.set(element, preferredElementId);
+        this.elementById.set(preferredElementId, element);
+        return preferredElementId;
+      }
+      return existingId;
+    }
+
+    const elementId = preferredElementId ?? createUuid("clicky-element");
+    this.idByElement.set(element, elementId);
+    this.elementById.set(elementId, element);
+    return elementId;
+  }
+
+  getElementById(elementId: string): Element | undefined {
+    return this.elementById.get(elementId);
+  }
+
+  clear(): void {
+    this.elementById.clear();
+  }
+}
+**********************
+PowerShell transcript end
+End time: 20260607145357
+**********************

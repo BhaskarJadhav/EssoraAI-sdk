@@ -1,0 +1,37 @@
+**********************
+PowerShell transcript start
+Start time: 20260607153455
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$ErrorActionPreference='Stop'
+$repo='C:\Users\jadha\clicky.ai'
+$log=Join-Path $repo ("logs\inspect-playwright-json-status-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".log")
+Start-Transcript -Path $log -Force | Out-Null
+Set-Location (Join-Path $repo 'clicky-web-sdk')
+@'
+const fs = require('fs');
+const r = JSON.parse(fs.readFileSync('e2e/results.json','utf8'));
+function walk(suites){for(const s of suites){for(const spec of s.specs||[]){for(const t of spec.tests){console.log(JSON.stringify({title: spec.title, outcome:t.outcome, status:t.status, results:t.results.map(r=>r.status)}, null, 2)); return;}} walk(s.suites||[]);}}
+walk(r.suites);
+console.log('stats', r.stats);
+'@ | node
+Stop-Transcript | Out-Null
+Write-Output "Logged Playwright JSON status inspection to $log"
+Process ID: 11812
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+**********************
+PowerShell transcript end
+End time: 20260607153455
+**********************

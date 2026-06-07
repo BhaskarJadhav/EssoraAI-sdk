@@ -1,0 +1,41 @@
+**********************
+PowerShell transcript start
+Start time: 20260607153648
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$ErrorActionPreference='Stop'
+$repo='C:\Users\jadha\clicky.ai'
+$log=Join-Path $repo ("logs\e2e-line-counts-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".log")
+Start-Transcript -Path $log -Force | Out-Null
+Set-Location (Join-Path $repo 'clicky-web-sdk')
+Get-ChildItem playwright.config.ts,e2e\fixtures\sdk-fixture.ts,e2e\*.spec.ts,e2e\report.ts | ForEach-Object { $lines=(Get-Content $_.FullName).Count; "$($_.Name): $lines" }
+Stop-Transcript | Out-Null
+Write-Output "Logged e2e line counts to $log"
+Process ID: 30296
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+playwright.config.ts: 49
+sdk-fixture.ts: 199
+01-cursor-animation.spec.ts: 68
+02-target-lock.spec.ts: 75
+03-semantic-graph.spec.ts: 57
+04-guide-mode.spec.ts: 54
+05-voice-waveform.spec.ts: 44
+06-onboarding.spec.ts: 64
+07-screenshot-vision.spec.ts: 62
+report.ts: 172
+**********************
+PowerShell transcript end
+End time: 20260607153648
+**********************

@@ -1,0 +1,356 @@
+{
+  "config": {
+    "configFile": "C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\playwright.config.ts",
+    "rootDir": "C:/Users/jadha/clicky.ai/clicky-web-sdk/e2e",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "C:/Users/jadha/clicky.ai/clicky-web-sdk/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "C:/Users/jadha/clicky.ai/clicky-web-sdk/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 45000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "e2e/results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.60.0",
+    "workers": 1,
+    "webServer": {
+      "command": "npm run dev -- --host 127.0.0.1 --port 5173 --strictPort",
+      "url": "http://127.0.0.1:5173/demo/",
+      "reuseExistingServer": true,
+      "timeout": 120000,
+      "env": {
+        "VITE_CLICKY_WORKER_BASE_URL": "https://round-voice-437d.essora-contactus.workers.dev"
+      }
+    }
+  },
+  "suites": [
+    {
+      "title": "04-guide-mode.spec.ts",
+      "file": "04-guide-mode.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "guide mode",
+          "file": "04-guide-mode.spec.ts",
+          "line": 3,
+          "column": 6,
+          "specs": [
+            {
+              "title": "guide produces multiple steps",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 45000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3975,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-06-07T11:37:58.012Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "bcc4c7c4d1cf0d40acd1-efe1c916121939108bc9",
+              "file": "04-guide-mode.spec.ts",
+              "line": 6,
+              "column": 3
+            },
+            {
+              "title": "guide advances on stepCompleted",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 45000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 25364,
+                      "error": {
+                        "message": "TimeoutError: page.waitForFunction: Timeout 20000ms exceeded.",
+                        "stack": "TimeoutError: page.waitForFunction: Timeout 20000ms exceeded.\n    at SdkFixture.waitForEvent (C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\e2e\\fixtures\\sdk-fixture.ts:68:21)\n    at C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\e2e\\04-guide-mode.spec.ts:23:29",
+                        "location": {
+                          "file": "C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\e2e\\fixtures\\sdk-fixture.ts",
+                          "column": 21,
+                          "line": 68
+                        },
+                        "snippet": "\u001b[90m   at \u001b[39mfixtures\\sdk-fixture.ts:68\n\n\u001b[0m \u001b[90m 66 |\u001b[39m   \u001b[36masync\u001b[39m waitForEvent(eventName\u001b[33m:\u001b[39m string\u001b[33m,\u001b[39m timeout \u001b[33m=\u001b[39m \u001b[35m5\u001b[39m_000)\u001b[33m:\u001b[39m \u001b[33mPromise\u001b[39m\u001b[33m<\u001b[39m\u001b[33mClickyE2EEvent\u001b[39m\u001b[33m>\u001b[39m {\n \u001b[90m 67 |\u001b[39m     \u001b[36mconst\u001b[39m startingEventCount \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m \u001b[36mthis\u001b[39m\u001b[33m.\u001b[39meventCount()\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 68 |\u001b[39m     \u001b[36mawait\u001b[39m \u001b[36mthis\u001b[39m\u001b[33m.\u001b[39mpage\u001b[33m.\u001b[39mwaitForFunction(\n \u001b[90m    |\u001b[39m                     \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 69 |\u001b[39m       ({ expectedEventName\u001b[33m,\u001b[39m startIndex }) \u001b[33m=>\u001b[39m\n \u001b[90m 70 |\u001b[39m         ((window \u001b[36mas\u001b[39m any)\u001b[33m.\u001b[39m__clickyTest\u001b[33m?\u001b[39m\u001b[33m.\u001b[39mevents \u001b[33m?\u001b[39m\u001b[33m?\u001b[39m [])\n \u001b[90m 71 |\u001b[39m           \u001b[33m.\u001b[39mslice(startIndex)\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\e2e\\fixtures\\sdk-fixture.ts",
+                            "column": 21,
+                            "line": 68
+                          },
+                          "message": "TimeoutError: page.waitForFunction: Timeout 20000ms exceeded.\n\n   at fixtures\\sdk-fixture.ts:68\n\n  66 |   async waitForEvent(eventName: string, timeout = 5_000): Promise<ClickyE2EEvent> {\n  67 |     const startingEventCount = await this.eventCount();\n> 68 |     await this.page.waitForFunction(\n     |                     ^\n  69 |       ({ expectedEventName, startIndex }) =>\n  70 |         ((window as any).__clickyTest?.events ?? [])\n  71 |           .slice(startIndex)\n    at SdkFixture.waitForEvent (C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\e2e\\fixtures\\sdk-fixture.ts:68:21)\n    at C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\e2e\\04-guide-mode.spec.ts:23:29"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-06-07T11:38:02.155Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\test-results\\04-guide-mode-guide-mode-guide-advances-on-stepCompleted-chromium\\test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\test-results\\04-guide-mode-guide-mode-guide-advances-on-stepCompleted-chromium\\video.webm"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\test-results\\04-guide-mode-guide-mode-guide-advances-on-stepCompleted-chromium\\error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\test-results\\04-guide-mode-guide-mode-guide-advances-on-stepCompleted-chromium\\trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\e2e\\fixtures\\sdk-fixture.ts",
+                        "column": 21,
+                        "line": 68
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "bcc4c7c4d1cf0d40acd1-1b22417dfb28e6b8c921",
+              "file": "04-guide-mode.spec.ts",
+              "line": 19,
+              "column": 3
+            },
+            {
+              "title": "guide points to a real target each step",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 45000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 25719,
+                      "error": {
+                        "message": "TimeoutError: page.waitForFunction: Timeout 20000ms exceeded.",
+                        "stack": "TimeoutError: page.waitForFunction: Timeout 20000ms exceeded.\n    at SdkFixture.waitForEvent (C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\e2e\\fixtures\\sdk-fixture.ts:68:21)\n    at C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\e2e\\04-guide-mode.spec.ts:32:25",
+                        "location": {
+                          "file": "C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\e2e\\fixtures\\sdk-fixture.ts",
+                          "column": 21,
+                          "line": 68
+                        },
+                        "snippet": "\u001b[90m   at \u001b[39mfixtures\\sdk-fixture.ts:68\n\n\u001b[0m \u001b[90m 66 |\u001b[39m   \u001b[36masync\u001b[39m waitForEvent(eventName\u001b[33m:\u001b[39m string\u001b[33m,\u001b[39m timeout \u001b[33m=\u001b[39m \u001b[35m5\u001b[39m_000)\u001b[33m:\u001b[39m \u001b[33mPromise\u001b[39m\u001b[33m<\u001b[39m\u001b[33mClickyE2EEvent\u001b[39m\u001b[33m>\u001b[39m {\n \u001b[90m 67 |\u001b[39m     \u001b[36mconst\u001b[39m startingEventCount \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m \u001b[36mthis\u001b[39m\u001b[33m.\u001b[39meventCount()\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 68 |\u001b[39m     \u001b[36mawait\u001b[39m \u001b[36mthis\u001b[39m\u001b[33m.\u001b[39mpage\u001b[33m.\u001b[39mwaitForFunction(\n \u001b[90m    |\u001b[39m                     \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 69 |\u001b[39m       ({ expectedEventName\u001b[33m,\u001b[39m startIndex }) \u001b[33m=>\u001b[39m\n \u001b[90m 70 |\u001b[39m         ((window \u001b[36mas\u001b[39m any)\u001b[33m.\u001b[39m__clickyTest\u001b[33m?\u001b[39m\u001b[33m.\u001b[39mevents \u001b[33m?\u001b[39m\u001b[33m?\u001b[39m [])\n \u001b[90m 71 |\u001b[39m           \u001b[33m.\u001b[39mslice(startIndex)\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\e2e\\fixtures\\sdk-fixture.ts",
+                            "column": 21,
+                            "line": 68
+                          },
+                          "message": "TimeoutError: page.waitForFunction: Timeout 20000ms exceeded.\n\n   at fixtures\\sdk-fixture.ts:68\n\n  66 |   async waitForEvent(eventName: string, timeout = 5_000): Promise<ClickyE2EEvent> {\n  67 |     const startingEventCount = await this.eventCount();\n> 68 |     await this.page.waitForFunction(\n     |                     ^\n  69 |       ({ expectedEventName, startIndex }) =>\n  70 |         ((window as any).__clickyTest?.events ?? [])\n  71 |           .slice(startIndex)\n    at SdkFixture.waitForEvent (C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\e2e\\fixtures\\sdk-fixture.ts:68:21)\n    at C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\e2e\\04-guide-mode.spec.ts:32:25"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-06-07T11:38:28.917Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\test-results\\04-guide-mode-guide-mode-g-939b8--to-a-real-target-each-step-chromium\\test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\test-results\\04-guide-mode-guide-mode-g-939b8--to-a-real-target-each-step-chromium\\video.webm"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\test-results\\04-guide-mode-guide-mode-g-939b8--to-a-real-target-each-step-chromium\\error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\test-results\\04-guide-mode-guide-mode-g-939b8--to-a-real-target-each-step-chromium\\trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "C:\\Users\\jadha\\clicky.ai\\clicky-web-sdk\\e2e\\fixtures\\sdk-fixture.ts",
+                        "column": 21,
+                        "line": 68
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "bcc4c7c4d1cf0d40acd1-fe7e77b2e95f0fdfaab3",
+              "file": "04-guide-mode.spec.ts",
+              "line": 29,
+              "column": 3
+            },
+            {
+              "title": "recovery fires after timeout",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 45000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 20651,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-06-07T11:38:56.910Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "bcc4c7c4d1cf0d40acd1-1077c951f84065ad010b",
+              "file": "04-guide-mode.spec.ts",
+              "line": 40,
+              "column": 3
+            },
+            {
+              "title": "cancelGuide stops the loop",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 45000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 5717,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-06-07T11:39:17.756Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "bcc4c7c4d1cf0d40acd1-22f81d572ab2ec5a9f83",
+              "file": "04-guide-mode.spec.ts",
+              "line": 48,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-06-07T11:37:57.313Z",
+    "duration": 86294.61,
+    "expected": 3,
+    "skipped": 0,
+    "unexpected": 2,
+    "flaky": 0
+  }
+}

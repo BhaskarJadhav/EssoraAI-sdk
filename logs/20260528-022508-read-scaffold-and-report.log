@@ -1,0 +1,958 @@
+**********************
+PowerShell transcript start
+Start time: 20260528022508
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$logPath = Join-Path 'C:\Users\jadha\clicky.ai\logs' "$timestamp-read-scaffold-and-report.log"
+Start-Transcript -Path $logPath -Force | Out-Null
+Write-Output '--- scaffold ---'
+Get-Content -Path scaffold.md
+Write-Output '--- voice report ---'
+Get-Content -Path voice-pipeline-report.md
+Stop-Transcript | Out-Null
+Get-Content $logPath
+Process ID: 13008
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+--- scaffold ---
+# Clicky Web SDK Scaffold
+
+This scaffold is the implementation handoff for building a browser-native Clicky SDK.
+It is not a literal port of the macOS app. It translates the browser-relevant Clicky
+behaviors into web APIs so any webapp can embed a voice-first companion that sees the
+current app, talks back, points at UI, and can safely execute host-approved actions.
+
+## Product Goal
+
+Build a framework-agnostic TypeScript SDK that gives a host webapp Clicky-like speed
+and capability:
+
+- voice-first push-to-talk assistance
+- manual text input fallback
+- DOM and accessibility-aware app context
+- optional user-triggered screenshot context
+- Claude streaming responses through the existing Cloudflare Worker
+- ElevenLabs text-to-speech playback through the Worker
+- in-app blue cursor overlay for pointing and guidance
+- conversation memory scoped to one SDK instance
+- optional autonomous actions through host-registered action hooks
+
+The SDK should optimize for webapp productivity and speed, not literal macOS UI
+parity.
+
+## Browser-Native Translation Rules
+
+The macOS app has OS-level privileges that browsers cannot provide. The SDK must be
+honest about these constraints and provide web-native replacements.
+
+| Mac Clicky behavior | Web SDK behavior |
+| --- | --- |
+| Menu bar companion panel | Floating in-app launcher and compact panel |
+| Global `ctrl + option` push-to-talk | Focused-page hotkey plus visible mic button |
+| ScreenCaptureKit multi-screen capture | DOM context by default, optional `getDisplayMedia` screenshot |
+| System-wide transparent overlay | Overlay mounted inside the host page DOM |
+| Multi-monitor cursor pointing | DOM element, viewport, page, or screenshot-relative pointing |
+| AppKit permissions | Browser permission prompts and host consent hooks |
+| Background app presence | SDK lifecycle owned by host page |
+
+The SDK cannot:
+
+- receive hotkeys while the browser tab or host app is not focused
+- draw outside the host page DOM
+- silently capture the user's screen
+- inspect other apps or browser tabs without browser capture permission
+- live in the macOS menu bar
+- execute arbitrary app actions without host-registered capabilities
+
+## Public SDK Interface
+
+### Entry Point
+
+```ts
+import { ClickySDK } from "@clicky/web-sdk";
+
+const clicky = ClickySDK.init({
+  workerBaseUrl: "https://your-worker.example.workers.dev",
+  appName: "Acme CRM",
+});
+```
+
+`ClickySDK.init(options)` creates one SDK instance, mounts the launcher/panel, sets up
+listeners, and returns a `ClickyClient`.
+
+### Required Options
+
+```ts
+type RequiredClickyOptions = {
+  workerBaseUrl: string;
+  appName: string;
+};
+```
+
+### Optional Options
+
+```ts
+type ClickyOptions = RequiredClickyOptions & {
+  mountElement?: HTMLElement;
+  hotkey?: ClickyHotkey;
+  enableVoice?: boolean;
+  enableTTS?: boolean;
+  enableScreenshots?: boolean;
+  contextMode?: "dom-first" | "dom-only" | "screenshot-first";
+  actionMode?: "disabled" | "confirm-before-execute" | "execute-registered-actions";
+  theme?: ClickyThemeOptions;
+  systemPrompt?: string;
+  privacy?: ClickyPrivacyOptions;
+};
+```
+
+Defaults:
+
+- `mountElement`: `document.body`
+- `hotkey`: focused-page `ctrl + option`
+- `enableVoice`: `true`
+- `enableTTS`: `true`
+- `enableScreenshots`: `false`
+- `contextMode`: `"dom-first"`
+- `actionMode`: `"confirm-before-execute"`
+
+### Instance Methods
+
+```ts
+type ClickyClient = {
+  open(): void;
+  close(): void;
+  destroy(): Promise<void>;
+
+  startPushToTalk(): Promise<void>;
+  stopPushToTalk(): Promise<void>;
+  sendUserText(text: string): Promise<void>;
+  captureContext(): Promise<ClickyCapturedContext>;
+
+  registerAction(actionDefinition: ClickyActionDefinition): void;
+  unregisterAction(actionId: string): void;
+
+  on<EventName extends ClickyEventName>(
+    eventName: EventName,
+    handler: ClickyEventHandler<EventName>
+  ): () => void;
+};
+```
+
+### Events
+
+The SDK emits typed events through the client event bus:
+
+- `state:changed`
+- `mic:start`
+- `mic:stop`
+- `transcript:partial`
+- `transcript:final`
+- `context:captured`
+- `assistant:token`
+- `assistant:done`
+- `tts:start`
+- `tts:end`
+- `overlay:point`
+- `action:proposed`
+- `action:confirmed`
+- `action:executed`
+- `action:failed`
+- `error`
+
+## Project Root
+
+```text
+clicky-web-sdk/
+  package.json
+  tsconfig.json
+  vite.config.ts
+  README.md
+  scaffold.md
+  src/
+    index.ts
+    core/
+      ClickyClient.ts
+      StateMachine.ts
+      EventBus.ts
+      Config.ts
+      Lifecycle.ts
+      types.ts
+    context/
+      ContextCollector.ts
+      DomSnapshot.ts
+      AccessibilitySnapshot.ts
+      ElementRegistry.ts
+      ScreenshotCapture.ts
+      Redaction.ts
+      selectors.ts
+    api/
+      WorkerProxy.ts
+      ClaudeClient.ts
+      AssemblyAIClient.ts
+      ElevenLabsClient.ts
+      SseParser.ts
+    audio/
+      MicCapture.ts
+      AudioWorkletProcessor.ts
+      PcmEncoder.ts
+      AudioPlayer.ts
+      VoiceActivityMeter.ts
+    actions/
+      ActionRegistry.ts
+      ActionPlanner.ts
+      ConfirmationPolicy.ts
+      ActionExecutor.ts
+      actionTypes.ts
+    overlay/
+      OverlayRoot.ts
+      CursorOverlay.ts
+      CursorAnimator.ts
+      ElementHighlighter.ts
+      ResponseBubble.ts
+      overlayStyles.ts
+    panel/
+      PanelRoot.ts
+      LauncherButton.ts
+      CompanionPanel.ts
+      MicButton.ts
+      PermissionStatus.ts
+      panelStyles.ts
+    parsing/
+      PointTagParser.ts
+      ActionTagParser.ts
+      ResponseCleaner.ts
+    shared/
+      DesignSystem.ts
+      ShadowDom.ts
+      browserSupport.ts
+    utils/
+      dom.ts
+      time.ts
+      uuid.ts
+      logger.ts
+  demo/
+    index.html
+    main.ts
+    styles.css
+```
+
+## Architecture
+
+The SDK has six layers:
+
+1. UI layer: launcher, panel, mic controls, overlay, response bubble
+2. Control layer: `ClickyClient`, state machine, lifecycle, event bus
+3. Context layer: DOM snapshot, accessibility extraction, element registry, screenshot capture
+4. Media layer: mic capture, PCM encoding, realtime transcription, TTS playback
+5. AI layer: Worker proxy, Claude streaming, AssemblyAI websocket, ElevenLabs TTS
+6. Action layer: host-registered actions, confirmation policy, execution results
+
+All browser UI should be framework-agnostic and mounted in Shadow DOM to avoid leaking
+styles into the host app or inheriting unsafe host styles. React, Vue, Svelte, and other
+wrappers may be added later, but v1 must not require a framework dependency.
+
+## Core Flow
+
+### Voice Interaction
+
+1. User holds the focused-page hotkey or presses the mic button.
+2. `MicCapture` requests or uses mic permission and streams PCM16 frames.
+3. `AssemblyAIClient` sends frames over websocket and emits partial/final transcripts.
+4. `ClickyClient` captures DOM-first context and optional screenshot context.
+5. `ClaudeClient` sends transcript, context, screenshot data, and conversation history.
+6. Claude streams tokens through the Worker.
+7. `ResponseCleaner` strips private control tags from visible/spoken text.
+8. `PointTagParser` and `ActionTagParser` extract point/action instructions.
+9. Overlay points at relevant UI.
+10. If enabled, `ElevenLabsClient` synthesizes the spoken response.
+11. If actions are proposed, `ActionPlanner` routes them through the host action policy.
+
+### Text Interaction
+
+1. User types into the panel input.
+2. `sendUserText(text)` follows the same context, Claude, pointing, TTS, and action flow.
+3. Text input must work even when microphone permission is denied.
+
+### Context Capture
+
+`contextMode: "dom-first"` is the default:
+
+1. Collect DOM/accessibility context every interaction.
+2. Include optional screenshot only when `enableScreenshots` is true and capture is user-triggered.
+3. Prefer DOM element IDs for pointing and actions.
+4. Fall back to viewport coordinates only when no stable element target exists.
+
+## DOM-First Context
+
+`ContextCollector` must collect enough app context for Claude to answer questions and
+identify UI targets without requiring screenshots on every request.
+
+Collect:
+
+- visible text
+- headings
+- buttons
+- links
+- inputs and textareas
+- labels
+- ARIA labels and roles
+- selected values where safe
+- element bounds
+- scroll offsets
+- stable selectors
+- generated `clickyElementId` values
+- page title and URL path
+
+Do not collect:
+
+- password values
+- hidden input values
+- fields matching configured private selectors
+- elements with `data-clicky-private`
+- content inside `[aria-hidden="true"]` unless needed for visible UI structure
+
+Supported host annotations:
+
+```html
+<button data-clicky-label="Create invoice">New</button>
+<section data-clicky-context="Billing dashboard"></section>
+<input data-clicky-private />
+<div data-clicky-ignore></div>
+```
+
+`ElementRegistry` maps DOM nodes to stable SDK-generated element IDs for the current
+capture. These IDs are valid for the current page state only and should be refreshed on
+each interaction.
+
+## Screenshot Capture
+
+Screenshots are optional and user-triggered.
+
+Use:
+
+- `navigator.mediaDevices.getDisplayMedia`
+- video frame capture into canvas
+- PNG or JPEG base64 encoding
+- immediate media track cleanup after capture
+
+The SDK should support three screenshot modes:
+
+- disabled: never request capture
+- manual: user presses a capture button
+- interaction: SDK may request capture during a user-initiated voice/text interaction
+
+The scaffold must not claim silent or background screenshot capture. Browsers may show
+permission prompts every time, depending on browser and user settings.
+
+## Pointing Protocol
+
+Claude should prefer element-based pointing because DOM element IDs survive layout
+differences better than screenshot pixels.
+
+Supported tags:
+
+```text
+[POINT:elementId:label]
+[POINT:x,y:label]
+[POINT:none]
+```
+
+Rules:
+
+- Tags appear at the end of the assistant response.
+- `elementId` refers to a `clickyElementId` from the latest context capture.
+- `x,y` are viewport CSS pixels with top-left origin unless explicitly tied to a screenshot.
+- `label` is a short 1-3 word target description.
+- The SDK strips point tags before TTS and normal panel rendering.
+- If pointing is not useful, Claude must append `[POINT:none]`.
+
+Overlay behavior:
+
+- mount inside Shadow DOM
+- use `pointer-events: none` except confirmation UI
+- animate the blue cursor to the element center or viewport coordinate
+- account for scroll offsets
+- clamp targets to the visible viewport
+- optionally highlight the target element briefly
+- never block host app interaction after animation
+
+## Autonomous Actions
+
+The browser SDK may support autonomous actions, but only through host-registered action
+hooks. Claude must not directly mutate the DOM or submit forms outside the action system.
+
+### Action Definition
+
+```ts
+type ClickyActionDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  parametersSchema: Record<string, unknown>;
+  requiresConfirmation?: boolean;
+  allowSensitiveFields?: boolean;
+  execute(parameters: Record<string, unknown>, context: ClickyActionContext): Promise<ClickyActionResult>;
+};
+```
+
+Example host actions:
+
+- `navigate`
+- `focusElement`
+- `clickElement`
+- `fillInput`
+- `openModal`
+- `submitSearch`
+- app-specific commands such as `createInvoice` or `assignTicket`
+
+### Action Policy
+
+Default: `actionMode: "confirm-before-execute"`.
+
+Rules:
+
+- Execute only registered actions.
+- Show a confirmation UI before execution by default.
+- Reject actions not present in `ActionRegistry`.
+- Reject credential or sensitive-field entry unless the action explicitly allows it.
+- Emit `action:proposed`, `action:confirmed`, `action:executed`, or `action:failed`.
+- Surface action failures in the panel and keep the SDK usable.
+
+Supported response action protocol:
+
+```text
+[ACTION:actionId:jsonPayload]
+[ACTION:none]
+```
+
+The JSON payload must match the registered action's parameter schema.
+
+## API Layer
+
+The existing Cloudflare Worker proxy pattern remains the backend contract. Browser code
+must never require raw Anthropic, AssemblyAI, or ElevenLabs keys.
+
+Routes:
+
+| Route | Purpose |
+| --- | --- |
+| `POST /chat` | Claude streaming messages |
+| `POST /tts` | ElevenLabs audio synthesis |
+| `POST /transcribe-token` | Short-lived AssemblyAI websocket token |
+
+`WorkerProxy` owns:
+
+- base URL normalization
+- JSON requests
+- streaming requests
+- timeout support
+- retry for safe transient failures
+- normalized error objects
+
+`ClaudeClient` owns:
+
+- prompt construction
+- conversation history serialization
+- DOM context serialization
+- optional screenshot attachment
+- SSE parsing
+- token and done events
+
+`AssemblyAIClient` owns:
+
+- token fetching
+- websocket lifecycle
+- PCM16 frame sending
+- partial/final transcript events
+- reconnect handling for recoverable disconnects
+
+`ElevenLabsClient` owns:
+
+- text cleanup before synthesis
+- audio blob fetching
+- playback handoff to `AudioPlayer`
+- `tts:start` and `tts:end` events
+
+## Prompting Requirements
+
+The system prompt should describe Clicky as an in-app web companion, not a menu bar app.
+
+It must tell Claude:
+
+- the user is interacting inside a webapp
+- DOM context is the primary source of truth
+- screenshots may be present but are optional
+- answers should be concise because they may be spoken aloud
+- point tags must use the current pointing protocol
+- action tags may only use registered actions
+- if no point or action is useful, use `[POINT:none]` and `[ACTION:none]`
+- never claim to see outside the current webapp unless screenshot context was explicitly provided
+
+## File Responsibilities
+
+### `src/index.ts`
+
+- Export `ClickySDK`, `ClickyClient`, public types, and `init`.
+- Attach `window.ClickySDK` for UMD builds.
+- Register the optional custom element if enabled by build config.
+
+### `src/core/ClickyClient.ts`
+
+- Central coordinator for UI, context, audio, API clients, overlay, and actions.
+- Maintains scoped conversation history.
+- Owns public methods and event subscriptions.
+- Ensures `destroy()` fully tears down listeners, media tracks, websockets, audio, and DOM nodes.
+
+### `src/core/StateMachine.ts`
+
+States:
+
+- `idle`
+- `listening`
+- `transcribing`
+- `capturing-context`
+- `responding`
+- `speaking`
+- `awaiting-action-confirmation`
+- `executing-action`
+- `error`
+
+Enforce valid transitions and emit `state:changed`.
+
+### `src/context/*`
+
+- Build DOM-first context.
+- Generate element IDs and stable selectors.
+- Redact sensitive content.
+- Capture optional screenshots.
+- Return a single `ClickyCapturedContext` object.
+
+### `src/audio/*`
+
+- Request mic permission only from user gestures.
+- Use Web Audio API and AudioWorklet where available.
+- Convert Float32 mic frames to PCM16.
+- Provide visible audio level updates for the mic button/waveform.
+- Decode and play TTS audio while respecting browser autoplay policies.
+
+### `src/api/*`
+
+- Use the Cloudflare Worker for all AI vendor calls.
+- Parse Claude SSE robustly across chunk boundaries.
+- Keep provider-specific code out of UI and core components.
+
+### `src/actions/*`
+
+- Store host-registered actions.
+- Validate proposed action IDs and payloads.
+- Apply confirmation policy.
+- Execute actions and emit results.
+
+### `src/overlay/*`
+
+- Create the Shadow DOM overlay root.
+- Draw and animate the blue cursor.
+- Position response bubbles near the cursor when useful.
+- Highlight pointed elements without altering host layout.
+
+### `src/panel/*`
+
+- Render the launcher and compact panel in vanilla DOM.
+- Show state, transcript, response, mic button, text input, permissions, and action confirmations.
+- Provide hover and focus states for all interactive controls.
+
+### `src/parsing/*`
+
+- Parse point tags.
+- Parse action tags.
+- Strip internal tags before TTS and visible response rendering.
+- Handle missing or malformed tags gracefully.
+
+### `demo/*`
+
+- Plain HTML demo with no React.
+- Demonstrate SDK initialization, voice input, manual text, DOM context, pointing, screenshot opt-in, and registered actions.
+
+## Phased Implementation Checklist
+
+### 1. Bootstrap
+
+Goal: working TypeScript library build.
+
+Steps:
+
+- Create package, Vite, TypeScript, Vitest, and demo setup.
+- Build ESM and UMD outputs.
+- Export `ClickySDK.init`.
+- Confirm demo loads the SDK in plain HTML.
+
+Output: `npm run build` and demo page both work.
+
+### 2. Core Runtime
+
+Goal: stable SDK lifecycle.
+
+Steps:
+
+- Implement typed EventBus.
+- Implement StateMachine.
+- Implement Config defaults and validation.
+- Implement `ClickyClient.open`, `close`, `destroy`, and `sendUserText`.
+
+Output: SDK can mount, open, close, and unmount cleanly.
+
+### 3. Shadow DOM UI
+
+Goal: framework-agnostic in-app UI.
+
+Steps:
+
+- Implement launcher and compact panel.
+- Implement overlay root.
+- Add design tokens and isolated styles.
+- Verify host styles do not leak in or out.
+
+Output: visible panel and overlay in the demo app.
+
+### 4. DOM Context
+
+Goal: Clicky understands the host webapp without screenshots.
+
+Steps:
+
+- Implement visible DOM/accessibility snapshot.
+- Add element ID registry.
+- Add redaction rules.
+- Serialize context for Claude.
+
+Output: Claude can reference visible app UI from DOM context.
+
+### 5. Voice And Transcription
+
+Goal: voice-first interaction.
+
+Steps:
+
+- Implement mic permission flow.
+- Implement AudioWorklet capture and PCM16 conversion.
+- Fetch AssemblyAI token through Worker.
+- Stream mic frames and emit transcripts.
+
+Output: holding hotkey or pressing mic button yields final transcript.
+
+### 6. Claude Streaming
+
+Goal: realtime assistant response.
+
+Steps:
+
+- Build prompt and message payload.
+- Include conversation history and captured context.
+- Stream `/chat` response through Worker.
+- Render tokens as they arrive.
+
+Output: assistant response streams into panel.
+
+### 7. Pointing Overlay
+
+Goal: Clicky points at app UI.
+
+Steps:
+
+- Parse `[POINT:...]` tags.
+- Resolve element IDs to DOM bounds.
+- Animate cursor to target.
+- Fall back to viewport coordinates.
+- Strip tags before TTS.
+
+Output: Clicky visually points at relevant elements.
+
+### 8. TTS Playback
+
+Goal: spoken assistant responses.
+
+Steps:
+
+- Send cleaned text to `/tts`.
+- Decode and play audio.
+- Emit TTS lifecycle events.
+- Handle autoplay restrictions gracefully.
+
+Output: assistant response is spoken after a user-initiated interaction.
+
+### 9. Optional Screenshot Context
+
+Goal: add visual context when DOM is insufficient.
+
+Steps:
+
+- Add capture button and enabled interaction flow.
+- Use `getDisplayMedia`.
+- Capture a frame to canvas.
+- Stop media tracks immediately.
+- Attach encoded image to Claude request.
+
+Output: Claude can answer about visual/canvas/image-heavy UI when user grants capture.
+
+### 10. Autonomous Actions
+
+Goal: safe host-app control.
+
+Steps:
+
+- Implement action registry.
+- Parse action tags.
+- Validate payloads.
+- Show confirmation UI by default.
+- Execute registered actions and emit result events.
+
+Output: Clicky can perform host-approved actions without arbitrary DOM mutation.
+
+### 11. QA And Hardening
+
+Goal: reliable SDK behavior across realistic host apps.
+
+Steps:
+
+- Add unit tests.
+- Add browser tests.
+- Test permission-denied flows.
+- Test long pages and scroll offsets.
+- Test high z-index host modals.
+- Test cleanup on `destroy()`.
+
+Output: SDK is ready for embedding in real webapps.
+
+## Test Plan
+
+### Unit Tests
+
+- State transitions
+- EventBus subscriptions and unsubscriptions
+- Config validation and defaults
+- PCM16 conversion
+- SSE chunk parsing
+- POINT tag parsing
+- ACTION tag parsing
+- DOM context redaction
+- Element registry lookup
+- Action registry permission policy
+
+### Browser Tests
+
+- SDK mounts in plain HTML without React.
+- Shadow DOM styles do not leak into host app.
+- Focused-page hotkey works only while page is focused.
+- Mic button starts and stops transcription.
+- Manual text input works without mic permission.
+- Claude response streams into the panel.
+- TTS starts only after an allowed user interaction.
+- Overlay points at DOM elements without blocking host clicks.
+- Registered actions require confirmation by default.
+- `destroy()` removes listeners, media tracks, DOM nodes, audio playback, and websocket connections.
+
+### Manual QA
+
+- Chrome
+- Edge
+- Safari where APIs are available
+- Firefox where APIs are available
+- Mic permission denied
+- Screenshot permission denied
+- Long scrolling pages
+- Host pages with high z-index modals
+- Sensitive forms and redaction
+- Canvas/image-heavy pages with screenshot opt-in
+
+## Implementation Constraints
+
+- Do not add React as a required runtime dependency.
+- Do not require host apps to expose API keys.
+- Do not promise cross-tab, cross-app, or system-wide behavior.
+- Do not collect private field values by default.
+- Do not execute unregistered actions.
+- Do not perform credential entry unless the host explicitly opts into it.
+- Do not leave media tracks, websocket connections, audio playback, or DOM nodes alive after `destroy()`.
+
+## Success Criteria
+
+The SDK is successful when a plain HTML webapp can embed Clicky with a few lines of
+code and get:
+
+- a floating companion launcher/panel
+- voice and text input
+- DOM-aware answers
+- streamed assistant responses
+- optional spoken replies
+- in-app pointing at relevant UI
+- optional screenshot context
+- optional confirmed host actions
+- clean teardown
+
+The result should feel like Clicky adapted to the browser: fast, contextual, voice-led,
+and concrete, while respecting browser security boundaries.
+--- voice report ---
+# Clicky Browser Voice Pipeline - One-Page Report (May 27, 2026)
+
+## Scope
+End-to-end verification of the browser voice pipeline: mic capture to STT websocket to transcript to AI response to TTS to audio playback, with stage logging and latency visibility.
+
+## Current Architecture
+Browser SDK -> Cloudflare Worker -> Gemini (chat) + Deepgram (STT) + Google TTS fallback -> Browser audio playback.
+
+## Test Summary
+- Health/Secrets: All required secrets present (Google, Deepgram, ElevenLabs, Upstash, PostHog, Sentry).
+- Chat (Gemini): Working and returning valid responses.
+- STT (Deepgram): Working in upload mode; streaming enabled via /voice/stt-token.
+- TTS: Google TTS primary working and producing MP3; ElevenLabs fallback available when Google fails.
+- Browser Playback: Works when audio is returned; autoplay restrictions apply without user interaction.
+
+## Pipeline Stage Verification
+1) Mic permission granted
+- Logging added; verified via in-browser console logs during mic start.
+
+2) Audio chunks captured
+- Logging added (mic.audio.first_frame, mic.audio.frame_count).
+
+3) Deepgram websocket connected
+- Streaming token endpoint added: /voice/stt-token.
+- Expected log: stt.websocket.connected.
+
+4) Partial/final transcript received
+- Logs added for partial and final transcript events.
+
+5) Transcript sent to Worker/Gemini
+- Logged at chat.request.start and chat.response.done with latency.
+
+6) AI response returned successfully
+- Verified via multiple successful Gemini responses.
+
+7) TTS response generated
+- Google TTS primary: working, MP3 generated.
+- ElevenLabs fallback: available if Google fails.
+
+8) Audio playback started
+- Logs added: audio.playback.start / audio.playback.end.
+- Autoplay may be blocked without user gesture.
+
+## Key Findings
+- Primary path: Google TTS for voice output, Deepgram for STT.
+- ElevenLabs kept as fallback for TTS.
+- Critical fix applied: Streaming STT now uses /voice/stt-token instead of /voice/stt upload route.
+- Demo fix: enableTTS true; streaming token endpoint wired.
+
+## Latency/Diagnostics Instrumentation
+- Added timestamped logs for mic, STT, chat, and TTS stages.
+- Worker calls log timing, network errors, non-200 responses.
+- Websocket lifecycle logs show disconnects and reconnect reasons.
+
+## Automated Pipeline Check (CLI)
+Run the automated check to record baseline latency and health:
+
+```powershell
+Set-Location c:\Users\jadha\clicky.ai\round-voice-437d
+$base = "https://round-voice-437d.essora-contactus.workers.dev"
+$report = [ordered]@{}
+$healthStart = Get-Date
+$health = Invoke-RestMethod -Uri "$base/health"
+$report.health_ms = [int]((Get-Date) - $healthStart).TotalMilliseconds
+$report.health_ok = $health.success
+$report.health_services = $health.services
+$sttTokenStart = Get-Date
+$sttToken = Invoke-RestMethod -Method Post -Uri "$base/voice/stt-token" -ContentType "application/json" -Body "{}"
+$report.stt_token_ms = [int]((Get-Date) - $sttTokenStart).TotalMilliseconds
+$report.stt_token_provider = $sttToken.provider
+$report.stt_token_has_token = [bool]$sttToken.token
+$chatStart = Get-Date
+$chatBody = @{ message = "Say hello in one short sentence." } | ConvertTo-Json
+$chat = Invoke-RestMethod -Method Post -Uri "$base/ai/chat" -ContentType "application/json" -Body $chatBody
+$report.chat_ms = [int]((Get-Date) - $chatStart).TotalMilliseconds
+$report.chat_ok = $chat.success
+$report.chat_text = $chat.result.candidates[0].content.parts[0].text
+$ttsStart = Get-Date
+$ttsBody = @{ text = "Hello from Google TTS primary."; googleLanguageCode = "en-US" } | ConvertTo-Json
+Invoke-WebRequest -Method Post -Uri "$base/voice/tts" -ContentType "application/json" -Body $ttsBody -OutFile .\tts-check.mp3
+$ttsFile = Get-Item .\tts-check.mp3
+$report.tts_ms = [int]((Get-Date) - $ttsStart).TotalMilliseconds
+$report.tts_bytes = $ttsFile.Length
+$report | ConvertTo-Json -Depth 6 | Set-Content .\pipeline-report.json
+```
+
+Baseline results from the latest run:
+- health: 417 ms
+- stt token: 55 ms
+- chat: 1011 ms
+- tts (Google primary): 718 ms, 20,928 bytes
+
+## Remaining Risks
+- Autoplay restrictions: audio may not play without user gesture.
+- Provider policy changes: ElevenLabs Free Tier not reliable.
+- Streaming STT: must use /voice/stt-token for mic streaming.
+
+## Next Steps
+1) Run a live in-browser voice test and capture console logs.
+2) Ensure playback is triggered by the same user gesture that starts recording.
+3) Decide whether to keep ElevenLabs (paid) or rely on Google TTS fallback.
+
+## Conclusion
+The browser voice pipeline is functional with Google TTS fallback and streaming STT configured. The only confirmed blocker is ElevenLabs Free Tier. Logging is in place to pinpoint failures and latency at each stage during live browser testing.
+
+## Addendum - Secure STT Proxy Update
+
+After the initial report, `/voice/stt-token` was changed so it no longer returns the raw Deepgram API key to the browser.
+
+Current production behavior:
+
+- The Worker first attempts Deepgram's secure `/v1/auth/grant` temporary-token flow.
+- The current Deepgram key still returns `403 FORBIDDEN: Insufficient permissions` for token grants.
+- When token grants are unavailable, the Worker returns a secure fallback provider: `deepgram-proxy`.
+- The browser receives `wss://round-voice-437d.essora-contactus.workers.dev/voice/stt-stream`, not a provider secret.
+- `/voice/stt-stream` is a Worker WebSocket proxy to Deepgram, so realtime STT can proceed without exposing the raw Deepgram key.
+
+Latest checks:
+
+- `/voice/stt-token`: returns `provider: "deepgram-proxy"` with no browser secret.
+- `/voice/stt-stream`: WebSocket open test succeeded.
+- `/ai/chat`: Gemini still returns valid responses.
+- `/voice/tts`: Google TTS still returns playable MP3 audio.
+- SDK test suite: passed.
+- SDK production build: passed.
+- Worker test suite and dry-run deploy: passed.
+
+Remaining live QA:
+
+- Run an in-browser push-to-talk test through `/voice/stt-stream` with real microphone audio.
+- Confirm transcript partial/final events arrive through the proxy in Chrome, Edge, Safari, and Firefox.
+- Measure end-to-end latency from mic start to transcript, Gemini response, TTS playback, and overlay guidance.
+
+## Addendum - Voice Turn And AR Lock Fix
+
+The browser SDK now handles Deepgram-style streaming more defensively:
+
+- On mic release, the SDK waits briefly for STT finalization before closing the websocket.
+- If Deepgram does not emit a final transcript in time, the SDK promotes the latest partial transcript into a final turn.
+- Deepgram `speech_final` events are treated as final transcripts.
+- If realtime streaming still returns no transcript, the SDK uploads the recorded push-to-talk audio as WAV to `/voice/stt` and uses the Deepgram upload transcript as a fallback.
+
+The AR overlay now uses live element locking instead of one-time coordinates:
+
+- The target rectangle, pulse, cursor, and response bubble are recalculated from `getBoundingClientRect()` during the guidance window.
+- If the live element registry becomes stale, the SDK re-resolves the target using the captured stable selector before falling back to coordinates.
+- This improves scroll/layout-shift behavior and makes AR highlighting render on the actual target element instead of only moving the cursor.
+**********************
+PowerShell transcript end
+End time: 20260528022509
+**********************

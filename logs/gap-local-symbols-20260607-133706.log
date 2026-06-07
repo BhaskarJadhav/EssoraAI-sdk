@@ -1,0 +1,846 @@
+**********************
+PowerShell transcript start
+Start time: 20260607133707
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $logDir = Join-Path (Get-Location) 'logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $logPath = Join-Path $logDir "gap-local-symbols-$timestamp.log"; Start-Transcript -Path $logPath -Force | Out-Null; Write-Host "LOG_PATH=$logPath"; $paths = @('clicky-web-sdk/src/core/ClickyClient.ts','clicky-web-sdk/src/core/types.ts','clicky-web-sdk/src/api/ClaudeClient.ts','clicky-web-sdk/src/api/AssemblyAIClient.ts','clicky-web-sdk/src/api/ElevenLabsClient.ts','clicky-web-sdk/src/audio/MicCapture.ts','clicky-web-sdk/src/context/ContextCollector.ts','clicky-web-sdk/src/context/DomSnapshot.ts','clicky-web-sdk/src/context/ScreenshotCapture.ts','clicky-web-sdk/src/context/SemanticMapObserver.ts','clicky-web-sdk/src/overlay/CursorOverlay.ts','clicky-web-sdk/src/overlay/ElementHighlighter.ts','clicky-web-sdk/src/panel/CompanionPanel.ts','clicky-web-sdk/src/actions/ActionExecutor.ts','clicky-web-sdk/src/api/WorkerProxy.ts','round-voice-437d/src/index.ts'); foreach ($f in $paths) { Write-Host "--- $f"; Select-String -Path $f -Pattern 'class |interface |type |function |async |fetch|WebSocket|Media|Audio|POINT|ACTION|MutationObserver|getDisplayMedia|getUserMedia|Speech|telemetry|memory|health|stream|sse|cursor|highlight|hotkey|keydown|keyup|session|tenant|Google|Deepgram|Eleven|Sentry|PostHog' | Select-Object -First 180 }; Stop-Transcript | Out-Null
+Process ID: 26644
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+LOG_PATH=C:\Users\jadha\clicky.ai\logs\gap-local-symbols-20260607-133706.log
+--- clicky-web-sdk/src/core/ClickyClient.ts
+
+clicky-web-sdk\src\core\ClickyClient.ts:1:import { ActionPlanner } from "../actions/ActionPlanner";
+clicky-web-sdk\src\core\ClickyClient.ts:2:import { ActionRegistry } from "../actions/ActionRegistry";
+clicky-web-sdk\src\core\ClickyClient.ts:3:import { AssemblyAIClient } from "../api/AssemblyAIClient";
+clicky-web-sdk\src\core\ClickyClient.ts:5:import { ElevenLabsClient } from "../api/ElevenLabsClient";
+clicky-web-sdk\src\core\ClickyClient.ts:6:import { HealthClient } from "../api/HealthClient";
+clicky-web-sdk\src\core\ClickyClient.ts:7:import { MemoryClient } from "../api/MemoryClient";
+clicky-web-sdk\src\core\ClickyClient.ts:8:import { SpeechUploadClient } from "../api/SpeechUploadClient";
+clicky-web-sdk\src\core\ClickyClient.ts:9:import { TelemetryClient } from "../api/TelemetryClient";
+clicky-web-sdk\src\core\ClickyClient.ts:11:import { AudioPlayer } from "../audio/AudioPlayer";
+clicky-web-sdk\src\core\ClickyClient.ts:12:import { MicCapture } from "../audio/MicCapture";
+clicky-web-sdk\src\core\ClickyClient.ts:13:import { encodePcm16FramesToWavBase64 } from "../audio/WavEncoder";
+clicky-web-sdk\src\core\ClickyClient.ts:26:import type {
+clicky-web-sdk\src\core\ClickyClient.ts:27:  ClickyActionDefinition,
+clicky-web-sdk\src\core\ClickyClient.ts:34:  ClickyHealthReport,
+clicky-web-sdk\src\core\ClickyClient.ts:36:  ClickyPointCommand,
+clicky-web-sdk\src\core\ClickyClient.ts:42:export class ClickyClient implements ClickyClientPublic {
+clicky-web-sdk\src\core\ClickyClient.ts:50:  private readonly healthClient: HealthClient;
+clicky-web-sdk\src\core\ClickyClient.ts:52:  private readonly assemblyAIClient: AssemblyAIClient;
+clicky-web-sdk\src\core\ClickyClient.ts:53:  private readonly audioPlayer = new AudioPlayer();
+clicky-web-sdk\src\core\ClickyClient.ts:54:  private readonly elevenLabsClient: ElevenLabsClient;
+clicky-web-sdk\src\core\ClickyClient.ts:55:  private readonly speechUploadClient: SpeechUploadClient;
+clicky-web-sdk\src\core\ClickyClient.ts:56:  private readonly memoryClient: MemoryClient;
+clicky-web-sdk\src\core\ClickyClient.ts:57:  private readonly telemetryClient: TelemetryClient;
+clicky-web-sdk\src\core\ClickyClient.ts:58:  private readonly actionRegistry = new ActionRegistry();
+clicky-web-sdk\src\core\ClickyClient.ts:59:  private readonly actionPlanner: ActionPlanner;
+clicky-web-sdk\src\core\ClickyClient.ts:71:  private latestHealth?: ClickyHealthReport;
+clicky-web-sdk\src\core\ClickyClient.ts:74:  private lastTarget?: ClickyPointCommand;
+clicky-web-sdk\src\core\ClickyClient.ts:78:  private firstAudioFrameAt?: number;
+clicky-web-sdk\src\core\ClickyClient.ts:79:  private audioFrameCount = 0;
+clicky-web-sdk\src\core\ClickyClient.ts:84:  private activeVoiceSessionId?: string;
+clicky-web-sdk\src\core\ClickyClient.ts:85:  private isStreamingSttReady = false;
+clicky-web-sdk\src\core\ClickyClient.ts:86:  private audioLevelTotal = 0;
+clicky-web-sdk\src\core\ClickyClient.ts:87:  private audioLevelPeak = 0;
+clicky-web-sdk\src\core\ClickyClient.ts:88:  private voiceLikeAudioFrameCount = 0;
+clicky-web-sdk\src\core\ClickyClient.ts:95:    this.healthClient = new HealthClient(this.workerProxy, this.options);
+clicky-web-sdk\src\core\ClickyClient.ts:97:    this.assemblyAIClient = new AssemblyAIClient(this.workerProxy, 
+this.eventBus, this.options);
+clicky-web-sdk\src\core\ClickyClient.ts:98:    this.elevenLabsClient = new ElevenLabsClient(this.workerProxy, 
+this.audioPlayer, this.eventBus, this.options);
+clicky-web-sdk\src\core\ClickyClient.ts:99:    this.speechUploadClient = new SpeechUploadClient(this.workerProxy, 
+this.options);
+clicky-web-sdk\src\core\ClickyClient.ts:100:    this.memoryClient = new MemoryClient(this.workerProxy, this.options);
+clicky-web-sdk\src\core\ClickyClient.ts:101:    this.telemetryClient = new TelemetryClient(this.workerProxy, 
+this.options);
+clicky-web-sdk\src\core\ClickyClient.ts:102:    this.actionPlanner = new ActionPlanner(this.options, 
+this.actionRegistry, this.elementRegistry, this.eventBus);
+clicky-web-sdk\src\core\ClickyClient.ts:109:      onConfirmAction: () => void this.confirmPendingAction(),
+clicky-web-sdk\src\core\ClickyClient.ts:110:      onRejectAction: () => this.rejectPendingAction()
+clicky-web-sdk\src\core\ClickyClient.ts:113:    this.installHotkeyListeners();
+clicky-web-sdk\src\core\ClickyClient.ts:118:    this.lifecycle.add(() => this.assemblyAIClient.close());
+clicky-web-sdk\src\core\ClickyClient.ts:120:    this.lifecycle.add(() => this.audioPlayer.destroy());
+clicky-web-sdk\src\core\ClickyClient.ts:132:  async destroy(): Promise<void> {
+clicky-web-sdk\src\core\ClickyClient.ts:136:  async startPushToTalk(): Promise<void> {
+clicky-web-sdk\src\core\ClickyClient.ts:142:      const voiceSessionId = crypto.randomUUID();
+clicky-web-sdk\src\core\ClickyClient.ts:143:      this.activeVoiceSessionId = voiceSessionId;
+clicky-web-sdk\src\core\ClickyClient.ts:144:      this.isStreamingSttReady = false;
+clicky-web-sdk\src\core\ClickyClient.ts:149:      this.firstAudioFrameAt = undefined;
+clicky-web-sdk\src\core\ClickyClient.ts:150:      this.audioFrameCount = 0;
+clicky-web-sdk\src\core\ClickyClient.ts:152:      this.audioLevelTotal = 0;
+clicky-web-sdk\src\core\ClickyClient.ts:153:      this.audioLevelPeak = 0;
+clicky-web-sdk\src\core\ClickyClient.ts:154:      this.voiceLikeAudioFrameCount = 0;
+clicky-web-sdk\src\core\ClickyClient.ts:158:      this.micCapture.onAudioFrame((pcm16Frame) => 
+this.handleMicAudioFrame(voiceSessionId, pcm16Frame));
+clicky-web-sdk\src\core\ClickyClient.ts:162:      await this.assemblyAIClient.connect(sampleRate);
+clicky-web-sdk\src\core\ClickyClient.ts:163:      if (this.activeVoiceSessionId !== voiceSessionId || 
+this.stateMachine.getState() !== "listening") {
+clicky-web-sdk\src\core\ClickyClient.ts:164:        this.assemblyAIClient.close();
+clicky-web-sdk\src\core\ClickyClient.ts:167:      this.isStreamingSttReady = true;
+clicky-web-sdk\src\core\ClickyClient.ts:168:      this.flushQueuedAudioFramesToStreamingStt();
+clicky-web-sdk\src\core\ClickyClient.ts:169:      this.logStage("stt.websocket.connected", {
+clicky-web-sdk\src\core\ClickyClient.ts:182:  async stopPushToTalk(): Promise<void> {
+clicky-web-sdk\src\core\ClickyClient.ts:189:    this.activeVoiceSessionId = undefined;
+clicky-web-sdk\src\core\ClickyClient.ts:190:    this.isStreamingSttReady = false;
+clicky-web-sdk\src\core\ClickyClient.ts:193:      frames: this.audioFrameCount,
+clicky-web-sdk\src\core\ClickyClient.ts:194:      averageLevel: this.getAverageAudioLevel(),
+clicky-web-sdk\src\core\ClickyClient.ts:195:      peakLevel: this.audioLevelPeak,
+clicky-web-sdk\src\core\ClickyClient.ts:196:      voiceLikeFrames: this.voiceLikeAudioFrameCount
+clicky-web-sdk\src\core\ClickyClient.ts:198:    await this.assemblyAIClient.finishTurn();
+clicky-web-sdk\src\core\ClickyClient.ts:201:      await this.transcribeRecordedAudioFallback();
+clicky-web-sdk\src\core\ClickyClient.ts:216:  private handleMicAudioFrame(voiceSessionId: string, pcm16Frame: 
+Int16Array): void {
+clicky-web-sdk\src\core\ClickyClient.ts:217:    if (this.activeVoiceSessionId !== voiceSessionId) {
+clicky-web-sdk\src\core\ClickyClient.ts:221:    if (!this.firstAudioFrameAt) {
+clicky-web-sdk\src\core\ClickyClient.ts:222:      this.firstAudioFrameAt = performance.now();
+clicky-web-sdk\src\core\ClickyClient.ts:223:      this.logStage("mic.audio.first_frame", {
+clicky-web-sdk\src\core\ClickyClient.ts:224:        latencyMs: this.micStartedAt ? Math.round(this.firstAudioFrameAt - 
+this.micStartedAt) : undefined
+clicky-web-sdk\src\core\ClickyClient.ts:228:    this.audioFrameCount += 1;
+clicky-web-sdk\src\core\ClickyClient.ts:230:    const audioLevel = this.calculatePcm16Level(copiedPcm16Frame);
+clicky-web-sdk\src\core\ClickyClient.ts:231:    this.audioLevelTotal += audioLevel;
+clicky-web-sdk\src\core\ClickyClient.ts:232:    this.audioLevelPeak = Math.max(this.audioLevelPeak, audioLevel);
+clicky-web-sdk\src\core\ClickyClient.ts:233:    if (audioLevel > 0.012) {
+clicky-web-sdk\src\core\ClickyClient.ts:234:      this.voiceLikeAudioFrameCount += 1;
+clicky-web-sdk\src\core\ClickyClient.ts:238:    if (this.audioFrameCount === 1 || this.audioFrameCount % 20 === 0) {
+clicky-web-sdk\src\core\ClickyClient.ts:239:      this.logStage("mic.audio.frame_count", {
+clicky-web-sdk\src\core\ClickyClient.ts:240:        count: this.audioFrameCount,
+clicky-web-sdk\src\core\ClickyClient.ts:241:        level: audioLevel,
+clicky-web-sdk\src\core\ClickyClient.ts:242:        peakLevel: this.audioLevelPeak
+clicky-web-sdk\src\core\ClickyClient.ts:246:    if (this.isStreamingSttReady) {
+clicky-web-sdk\src\core\ClickyClient.ts:247:      this.assemblyAIClient.sendAudioFrame(copiedPcm16Frame);
+clicky-web-sdk\src\core\ClickyClient.ts:254:  private flushQueuedAudioFramesToStreamingStt(): void {
+clicky-web-sdk\src\core\ClickyClient.ts:257:      this.assemblyAIClient.sendAudioFrame(queuedPcm16Frame);
+clicky-web-sdk\src\core\ClickyClient.ts:260:    this.logStage("stt.audio.queue_flushed", { frames: queuedFrameCount });
+clicky-web-sdk\src\core\ClickyClient.ts:277:  private getAverageAudioLevel(): number {
+clicky-web-sdk\src\core\ClickyClient.ts:278:    if (this.audioFrameCount === 0) {
+clicky-web-sdk\src\core\ClickyClient.ts:282:    return Number((this.audioLevelTotal / 
+this.audioFrameCount).toFixed(4));
+clicky-web-sdk\src\core\ClickyClient.ts:286:    if (this.audioLevelPeak < 0.006 || this.voiceLikeAudioFrameCount === 
+0) {
+clicky-web-sdk\src\core\ClickyClient.ts:287:      return "The microphone opened, but the captured audio looks silent. 
+Check the Windows input device and Chrome microphone source, then speak while holding the Mic button.";
+clicky-web-sdk\src\core\ClickyClient.ts:290:    return "I received non-silent microphone audio, but speech 
+transcription still returned empty text. Try once more; if this repeats, we need to inspect the captured WAV.";
+clicky-web-sdk\src\core\ClickyClient.ts:293:  async sendUserText(text: string): Promise<void> {
+clicky-web-sdk\src\core\ClickyClient.ts:297:  async healthCheck(): Promise<ClickyHealthReport> {
+clicky-web-sdk\src\core\ClickyClient.ts:298:    const health = await this.healthClient.check();
+clicky-web-sdk\src\core\ClickyClient.ts:299:    this.latestHealth = health;
+clicky-web-sdk\src\core\ClickyClient.ts:300:    this.eventBus.emit("health:changed", { health });
+clicky-web-sdk\src\core\ClickyClient.ts:301:    if (!health.ok) {
+clicky-web-sdk\src\core\ClickyClient.ts:302:      this.markProviderDegraded("worker", health.error ?? "health check 
+failed");
+clicky-web-sdk\src\core\ClickyClient.ts:306:    return health;
+clicky-web-sdk\src\core\ClickyClient.ts:309:  async startTask(options: ClickyTaskOptions): Promise<void> {
+clicky-web-sdk\src\core\ClickyClient.ts:319:    void this.captureTelemetry("task_started", { inputMode: 
+options.inputMode, taskId: this.activeTaskId });
+clicky-web-sdk\src\core\ClickyClient.ts:340:    void this.captureTelemetry("task_ended", { taskId, reason });
+clicky-web-sdk\src\core\ClickyClient.ts:346:      health: this.latestHealth,
+clicky-web-sdk\src\core\ClickyClient.ts:356:  async captureContext(): Promise<ClickyCapturedContext> {
+clicky-web-sdk\src\core\ClickyClient.ts:362:  registerAction(actionDefinition: ClickyActionDefinition): void {
+clicky-web-sdk\src\core\ClickyClient.ts:363:    this.actionRegistry.registerAction(actionDefinition);
+clicky-web-sdk\src\core\ClickyClient.ts:366:  unregisterAction(actionId: string): void {
+clicky-web-sdk\src\core\ClickyClient.ts:367:    this.actionRegistry.unregisterAction(actionId);
+clicky-web-sdk\src\core\ClickyClient.ts:378:  private async processUserText(userText: string): Promise<void> {
+clicky-web-sdk\src\core\ClickyClient.ts:399:      const rawAssistantText = await
+this.streamAssistantTextWithFallback(normalizedUserText, capturedContext);
+clicky-web-sdk\src\core\ClickyClient.ts:403:      if (cleanedResponse.pointCommand.type === "none") {
+clicky-web-sdk\src\core\ClickyClient.ts:404:        cleanedResponse.pointCommand = 
+this.localGuidanceEngine.createPointCommand(normalizedUserText, capturedContext);
+clicky-web-sdk\src\core\ClickyClient.ts:410:      this.eventBus.emit("overlay:point", { command: 
+cleanedResponse.pointCommand });
+clicky-web-sdk\src\core\ClickyClient.ts:411:      this.lastTarget = cleanedResponse.pointCommand;
+clicky-web-sdk\src\core\ClickyClient.ts:412:      const didPoint = this.pointAtCommand(cleanedResponse.pointCommand, 
+capturedContext);
+clicky-web-sdk\src\core\ClickyClient.ts:413:      if (didPoint) {
+clicky-web-sdk\src\core\ClickyClient.ts:414:        this.eventBus.emit("cursor:targeted", { command: 
+cleanedResponse.pointCommand });
+clicky-web-sdk\src\core\ClickyClient.ts:415:      } else if (cleanedResponse.pointCommand.type !== "none") {
+clicky-web-sdk\src\core\ClickyClient.ts:416:        this.eventBus.emit("cursor:missed", { command: 
+cleanedResponse.pointCommand, reason: "target not found" });
+clicky-web-sdk\src\core\ClickyClient.ts:422:      await this.saveMemory();
+clicky-web-sdk\src\core\ClickyClient.ts:429:          await this.elevenLabsClient.speak(cleanedResponse.spokenText);
+clicky-web-sdk\src\core\ClickyClient.ts:436:      await
+this.actionPlanner.handleProposedAction(cleanedResponse.proposedAction, capturedContext);
+clicky-web-sdk\src\core\ClickyClient.ts:437:      if (this.actionPlanner.hasPendingAction()) {
+clicky-web-sdk\src\core\ClickyClient.ts:438:        this.stateMachine.setState("awaiting-action-confirmation");
+clicky-web-sdk\src\core\ClickyClient.ts:444:      await this.captureTelemetry("task_turn_completed", {
+clicky-web-sdk\src\core\ClickyClient.ts:447:        didPoint,
+clicky-web-sdk\src\core\ClickyClient.ts:448:        pointType: cleanedResponse.pointCommand.type
+clicky-web-sdk\src\core\ClickyClient.ts:458:  private async confirmPendingAction(): Promise<void> {
+clicky-web-sdk\src\core\ClickyClient.ts:460:      this.stateMachine.setState("executing-action");
+clicky-web-sdk\src\core\ClickyClient.ts:461:      await this.actionPlanner.confirmPendingAction();
+clicky-web-sdk\src\core\ClickyClient.ts:469:  private async streamAssistantTextWithFallback(
+clicky-web-sdk\src\core\ClickyClient.ts:474:      return await this.claudeClient.streamChat({
+clicky-web-sdk\src\core\ClickyClient.ts:478:        registeredActions: this.actionRegistry.listActions().map((action) 
+=> ({
+clicky-web-sdk\src\core\ClickyClient.ts:479:          id: action.id,
+clicky-web-sdk\src\core\ClickyClient.ts:480:          name: action.name,
+clicky-web-sdk\src\core\ClickyClient.ts:481:          description: action.description,
+clicky-web-sdk\src\core\ClickyClient.ts:482:          parametersSchema: action.parametersSchema
+clicky-web-sdk\src\core\ClickyClient.ts:504:  private async transcribeRecordedAudioFallback(): Promise<void> {
+clicky-web-sdk\src\core\ClickyClient.ts:506:      this.logStage("stt.upload.skipped_empty_audio");
+clicky-web-sdk\src\core\ClickyClient.ts:512:      const audioBase64 = 
+encodePcm16FramesToWavBase64(this.recordedPcm16Frames, this.recordedSampleRate);
+clicky-web-sdk\src\core\ClickyClient.ts:513:      const uploadResult = await
+this.speechUploadClient.transcribeWavBase64(audioBase64, this.recordedSampleRate);
+clicky-web-sdk\src\core\ClickyClient.ts:524:          averageLevel: this.getAverageAudioLevel(),
+clicky-web-sdk\src\core\ClickyClient.ts:525:          peakLevel: this.audioLevelPeak,
+clicky-web-sdk\src\core\ClickyClient.ts:526:          voiceLikeFrames: this.voiceLikeAudioFrameCount
+clicky-web-sdk\src\core\ClickyClient.ts:534:  private pointAtCommand(pointCommand: ClickyPointCommand, 
+capturedContext: ClickyCapturedContext): boolean {
+clicky-web-sdk\src\core\ClickyClient.ts:535:    const didPoint = this.overlayRoot.cursorOverlay.point(pointCommand);
+clicky-web-sdk\src\core\ClickyClient.ts:536:    if (didPoint || pointCommand.type !== "element") {
+clicky-web-sdk\src\core\ClickyClient.ts:537:      return didPoint;
+clicky-web-sdk\src\core\ClickyClient.ts:540:    const capturedElement = capturedContext.elements.find((element) =>
+element.id === pointCommand.elementId);
+clicky-web-sdk\src\core\ClickyClient.ts:547:
+this.overlayRoot.cursorOverlay.pointAtElement(liveElementFromSelector, pointCommand.label || capturedElement.label);
+clicky-web-sdk\src\core\ClickyClient.ts:551:    return this.overlayRoot.cursorOverlay.point({
+clicky-web-sdk\src\core\ClickyClient.ts:555:      label: pointCommand.label || capturedElement.label
+clicky-web-sdk\src\core\ClickyClient.ts:572:  private rejectPendingAction(): void {
+clicky-web-sdk\src\core\ClickyClient.ts:573:    this.actionPlanner.rejectPendingAction();
+clicky-web-sdk\src\core\ClickyClient.ts:574:    this.panelRoot.companionPanel.hideActionConfirmation();
+clicky-web-sdk\src\core\ClickyClient.ts:579:  private async bootstrapRuntime(): Promise<void> {
+clicky-web-sdk\src\core\ClickyClient.ts:580:    await this.healthCheck();
+clicky-web-sdk\src\core\ClickyClient.ts:581:    await this.loadMemory();
+clicky-web-sdk\src\core\ClickyClient.ts:584:  private async handleDomChanged(): Promise<void> {
+clicky-web-sdk\src\core\ClickyClient.ts:597:  private async applySemanticProviders(context: ClickyCapturedContext): 
+Promise<void> {
+clicky-web-sdk\src\core\ClickyClient.ts:603:  private async loadMemory(): Promise<void> {
+clicky-web-sdk\src\core\ClickyClient.ts:605:      const memory = await this.memoryClient.load();
+clicky-web-sdk\src\core\ClickyClient.ts:606:      if (memory?.conversationHistory) {
+clicky-web-sdk\src\core\ClickyClient.ts:607:        this.conversationHistory.splice(0,
+this.conversationHistory.length, ...memory.conversationHistory);
+clicky-web-sdk\src\core\ClickyClient.ts:609:      this.eventBus.emit("memory:loaded", { value: memory });
+clicky-web-sdk\src\core\ClickyClient.ts:611:      this.markProviderDegraded("memory", error instanceof Error ? 
+error.message : String(error));
+clicky-web-sdk\src\core\ClickyClient.ts:615:  private async saveMemory(): Promise<void> {
+clicky-web-sdk\src\core\ClickyClient.ts:617:      await this.memoryClient.save(this.conversationHistory);
+clicky-web-sdk\src\core\ClickyClient.ts:618:      this.eventBus.emit("memory:saved", { ok: true });
+clicky-web-sdk\src\core\ClickyClient.ts:620:      this.markProviderDegraded("memory", error instanceof Error ? 
+error.message : String(error));
+clicky-web-sdk\src\core\ClickyClient.ts:624:  private async captureTelemetry(eventName: string, properties: 
+Record<string, unknown> = {}): Promise<void> {
+--- clicky-web-sdk/src/core/types.ts
+clicky-web-sdk\src\core\types.ts:1:export type ClickyState =
+clicky-web-sdk\src\core\types.ts:8:  | "awaiting-action-confirmation"
+clicky-web-sdk\src\core\types.ts:9:  | "executing-action"
+clicky-web-sdk\src\core\types.ts:12:export type ClickyContextMode = "dom-first" | "dom-only" | "screenshot-first";
+clicky-web-sdk\src\core\types.ts:13:export type ClickyActionMode = "disabled" | "confirm-before-execute" | 
+"execute-registered-actions";
+clicky-web-sdk\src\core\types.ts:14:export type ClickyEnvironment = "development" | "staging" | "production";
+clicky-web-sdk\src\core\types.ts:15:export type ClickyRealtimeMode = "user-triggered-task";
+clicky-web-sdk\src\core\types.ts:16:export type ClickyVoiceProvider = "deepgram" | "assemblyai";
+clicky-web-sdk\src\core\types.ts:17:export type ClickyChatProvider = "gemini" | "anthropic";
+clicky-web-sdk\src\core\types.ts:18:export type ClickyTtsProvider = "elevenlabs";
+clicky-web-sdk\src\core\types.ts:20:export type ClickyHotkey = {
+clicky-web-sdk\src\core\types.ts:28:export type ClickyThemeOptions = {
+clicky-web-sdk\src\core\types.ts:35:export type ClickyPrivacyOptions = {
+clicky-web-sdk\src\core\types.ts:41:export type ClickyApiRoutes = {
+clicky-web-sdk\src\core\types.ts:46:  memorySave?: string;
+clicky-web-sdk\src\core\types.ts:47:  memoryLoad?: string;
+clicky-web-sdk\src\core\types.ts:48:  telemetryEvent?: string;
+clicky-web-sdk\src\core\types.ts:49:  health?: string;
+clicky-web-sdk\src\core\types.ts:52:export type ClickyOptions = {
+clicky-web-sdk\src\core\types.ts:55:  tenantId?: string;
+clicky-web-sdk\src\core\types.ts:57:  sessionId?: string;
+clicky-web-sdk\src\core\types.ts:60:  hotkey?: ClickyHotkey;
+clicky-web-sdk\src\core\types.ts:64:  telemetryEnabled?: boolean;
+clicky-web-sdk\src\core\types.ts:65:  memoryEnabled?: boolean;
+clicky-web-sdk\src\core\types.ts:71:  actionMode?: ClickyActionMode;
+clicky-web-sdk\src\core\types.ts:79:export type NormalizedClickyOptions = Required<
+clicky-web-sdk\src\core\types.ts:84:    | "tenantId"
+clicky-web-sdk\src\core\types.ts:86:    | "sessionId"
+clicky-web-sdk\src\core\types.ts:88:    | "hotkey"
+clicky-web-sdk\src\core\types.ts:92:    | "telemetryEnabled"
+clicky-web-sdk\src\core\types.ts:93:    | "memoryEnabled"
+clicky-web-sdk\src\core\types.ts:99:    | "actionMode"
+clicky-web-sdk\src\core\types.ts:110:export type ClickyCapturedElement = {
+clicky-web-sdk\src\core\types.ts:121:export type ClickyRect = {
+clicky-web-sdk\src\core\types.ts:128:export type ClickyScreenshot = {
+clicky-web-sdk\src\core\types.ts:136:export type ClickyCapturedContext = {
+clicky-web-sdk\src\core\types.ts:139:  tenantId: string;
+clicky-web-sdk\src\core\types.ts:141:  sessionId: string;
+clicky-web-sdk\src\core\types.ts:156:export type ClickyHealthReport = {
+clicky-web-sdk\src\core\types.ts:164:export type ClickyDiagnostics = {
+clicky-web-sdk\src\core\types.ts:166:  health?: ClickyHealthReport;
+clicky-web-sdk\src\core\types.ts:171:  lastTarget?: ClickyPointCommand;
+clicky-web-sdk\src\core\types.ts:175:export type ClickyTaskOptions = {
+clicky-web-sdk\src\core\types.ts:180:export type ClickySemanticProvider = {
+clicky-web-sdk\src\core\types.ts:184:export type ClickyConversationMessage = {
+clicky-web-sdk\src\core\types.ts:189:export type ClickyPointCommand =
+clicky-web-sdk\src\core\types.ts:194:export type ClickyParsedPointResult = {
+clicky-web-sdk\src\core\types.ts:196:  pointCommand: ClickyPointCommand;
+clicky-web-sdk\src\core\types.ts:199:export type ClickyActionDefinition = {
+clicky-web-sdk\src\core\types.ts:206:  execute(parameters: Record<string, unknown>, context: ClickyActionContext): 
+Promise<ClickyActionResult>;
+clicky-web-sdk\src\core\types.ts:209:export type ClickyActionContext = {
+clicky-web-sdk\src\core\types.ts:216:export type ClickyActionResult = {
+clicky-web-sdk\src\core\types.ts:222:export type ClickyProposedAction = {
+clicky-web-sdk\src\core\types.ts:223:  actionId: string;
+clicky-web-sdk\src\core\types.ts:225:  definition: ClickyActionDefinition;
+clicky-web-sdk\src\core\types.ts:228:export type ClickyParsedActionResult = {
+clicky-web-sdk\src\core\types.ts:230:  proposedAction?: {
+clicky-web-sdk\src\core\types.ts:231:    actionId: string;
+clicky-web-sdk\src\core\types.ts:236:export type ClickyEventMap = {
+clicky-web-sdk\src\core\types.ts:243:  "health:changed": { health: ClickyHealthReport };
+clicky-web-sdk\src\core\types.ts:252:  "overlay:point": { command: ClickyPointCommand };
+clicky-web-sdk\src\core\types.ts:253:  "cursor:targeted": { command: ClickyPointCommand };
+clicky-web-sdk\src\core\types.ts:254:  "cursor:missed": { command: ClickyPointCommand; reason: string };
+clicky-web-sdk\src\core\types.ts:257:  "memory:loaded": { value: unknown };
+clicky-web-sdk\src\core\types.ts:258:  "memory:saved": { ok: boolean };
+clicky-web-sdk\src\core\types.ts:259:  "telemetry:sent": { eventName: string };
+clicky-web-sdk\src\core\types.ts:260:  "action:proposed": { action: ClickyProposedAction };
+clicky-web-sdk\src\core\types.ts:261:  "action:confirmed": { action: ClickyProposedAction };
+clicky-web-sdk\src\core\types.ts:262:  "action:executed": { action: ClickyProposedAction; result: ClickyActionResult };
+clicky-web-sdk\src\core\types.ts:263:  "action:failed": { action?: ClickyProposedAction; error: Error };
+clicky-web-sdk\src\core\types.ts:267:export type ClickyEventName = keyof ClickyEventMap;
+clicky-web-sdk\src\core\types.ts:268:export type ClickyEventHandler<EventName extends ClickyEventName> = (payload: 
+ClickyEventMap[EventName]) => void;
+clicky-web-sdk\src\core\types.ts:270:export type ClickyClientPublic = {
+clicky-web-sdk\src\core\types.ts:277:  healthCheck(): Promise<ClickyHealthReport>;
+clicky-web-sdk\src\core\types.ts:282:  registerAction(actionDefinition: ClickyActionDefinition): void;
+clicky-web-sdk\src\core\types.ts:283:  unregisterAction(actionId: string): void;
+--- clicky-web-sdk/src/api/ClaudeClient.ts
+clicky-web-sdk\src\api\ClaudeClient.ts:1:import type { ClickyCapturedContext, ClickyConversationMessage, 
+NormalizedClickyOptions } from "../core/types";
+clicky-web-sdk\src\api\ClaudeClient.ts:3:import { SseParser } from "./SseParser";
+clicky-web-sdk\src\api\ClaudeClient.ts:5:export type StreamChatOptions = {
+clicky-web-sdk\src\api\ClaudeClient.ts:9:  registeredActions: Array<{ id: string; name: string; description: string; 
+parametersSchema: Record<string, unknown> }>;
+clicky-web-sdk\src\api\ClaudeClient.ts:13:export class ClaudeClient {
+clicky-web-sdk\src\api\ClaudeClient.ts:19:  async streamChat(streamChatOptions: StreamChatOptions): Promise<string> {
+clicky-web-sdk\src\api\ClaudeClient.ts:20:    const stream = await 
+this.workerProxy.fetchStream(this.options.apiRoutes.chat, this.createRequestBody(streamChatOptions));
+clicky-web-sdk\src\api\ClaudeClient.ts:21:    const reader = stream.getReader();
+clicky-web-sdk\src\api\ClaudeClient.ts:23:    const parser = new SseParser();
+clicky-web-sdk\src\api\ClaudeClient.ts:25:    let rawStreamText = "";
+clicky-web-sdk\src\api\ClaudeClient.ts:33:      const chunkText = decoder.decode(readResult.value, { stream: true });
+clicky-web-sdk\src\api\ClaudeClient.ts:34:      rawStreamText += chunkText;
+clicky-web-sdk\src\api\ClaudeClient.ts:39:          streamChatOptions.onToken(token, fullText);
+clicky-web-sdk\src\api\ClaudeClient.ts:48:        streamChatOptions.onToken(token, fullText);
+clicky-web-sdk\src\api\ClaudeClient.ts:52:    return fullText || this.extractJsonResponseText(rawStreamText);
+clicky-web-sdk\src\api\ClaudeClient.ts:55:  private createRequestBody(streamChatOptions: StreamChatOptions): 
+Record<string, unknown> {
+clicky-web-sdk\src\api\ClaudeClient.ts:56:    const systemPrompt = this.options.systemPrompt ??
+this.createDefaultSystemPrompt(streamChatOptions);
+clicky-web-sdk\src\api\ClaudeClient.ts:57:    const userPrompt = this.createUserPrompt(streamChatOptions);
+clicky-web-sdk\src\api\ClaudeClient.ts:58:    const conversationHistoryText = streamChatOptions.conversationHistory
+clicky-web-sdk\src\api\ClaudeClient.ts:71:      stream: true,
+clicky-web-sdk\src\api\ClaudeClient.ts:79:  private createDefaultSystemPrompt(streamChatOptions: StreamChatOptions): 
+string {
+clicky-web-sdk\src\api\ClaudeClient.ts:80:    const registeredActionInstructions =
+clicky-web-sdk\src\api\ClaudeClient.ts:81:      streamChatOptions.registeredActions.length > 0
+clicky-web-sdk\src\api\ClaudeClient.ts:82:        ? streamChatOptions.registeredActions
+clicky-web-sdk\src\api\ClaudeClient.ts:84:              (action) =>
+clicky-web-sdk\src\api\ClaudeClient.ts:85:                `- ${action.id}: ${action.description}. Parameters schema: 
+${JSON.stringify(action.parametersSchema)}`
+clicky-web-sdk\src\api\ClaudeClient.ts:97:When pointing helps, append exactly one point tag at the very end:
+clicky-web-sdk\src\api\ClaudeClient.ts:98:[POINT:elementId:label] for known DOM element IDs, [POINT:x,y:label] for 
+viewport CSS pixels, or [POINT:none].
+clicky-web-sdk\src\api\ClaudeClient.ts:100:Available registered actions:
+clicky-web-sdk\src\api\ClaudeClient.ts:101:${registeredActionInstructions}
+clicky-web-sdk\src\api\ClaudeClient.ts:103:If an action would help and is registered, append exactly one action tag 
+after the point tag:
+clicky-web-sdk\src\api\ClaudeClient.ts:104:[ACTION:actionId:jsonPayload]
+clicky-web-sdk\src\api\ClaudeClient.ts:105:If no action is useful, append [ACTION:none].
+clicky-web-sdk\src\api\ClaudeClient.ts:107:Do not invent element IDs. Do not invent actions. Do not include private 
+reasoning.
+clicky-web-sdk\src\api\ClaudeClient.ts:111:  private createUserPrompt(streamChatOptions: StreamChatOptions): string {
+clicky-web-sdk\src\api\ClaudeClient.ts:114:${streamChatOptions.userText}
+clicky-web-sdk\src\api\ClaudeClient.ts:117:${JSON.stringify(streamChatOptions.capturedContext, null, 2)}
+clicky-web-sdk\src\api\ClaudeClient.ts:133:      if (parsed.type === "content_block_delta" && parsed.delta?.type === 
+"text_delta") {
+clicky-web-sdk\src\api\ClaudeClient.ts:137:      if (parsed.type === "content_block_start" && 
+parsed.content_block?.type === "text") {
+clicky-web-sdk\src\api\ClaudeClient.ts:147:  private extractJsonResponseText(rawStreamText: string): string {
+clicky-web-sdk\src\api\ClaudeClient.ts:149:      const parsed = JSON.parse(rawStreamText) as {
+clicky-web-sdk\src\api\ClaudeClient.ts:167:      return parsed.content?.map((part) => (part.type === "text" ? 
+part.text ?? "" : "")).join("") ?? "";
+--- clicky-web-sdk/src/api/AssemblyAIClient.ts
+clicky-web-sdk\src\api\AssemblyAIClient.ts:2:import type { NormalizedClickyOptions } from "../core/types";
+clicky-web-sdk\src\api\AssemblyAIClient.ts:6:type AssemblyAITokenResponse = {
+clicky-web-sdk\src\api\AssemblyAIClient.ts:8:  provider?: "assemblyai" | "deepgram" | "deepgram-proxy";
+clicky-web-sdk\src\api\AssemblyAIClient.ts:9:  websocketUrl?: string;
+clicky-web-sdk\src\api\AssemblyAIClient.ts:12:export class AssemblyAIClient {
+clicky-web-sdk\src\api\AssemblyAIClient.ts:13:  private websocket?: WebSocket;
+clicky-web-sdk\src\api\AssemblyAIClient.ts:19:  private provider: AssemblyAITokenResponse["provider"];
+clicky-web-sdk\src\api\AssemblyAIClient.ts:27:  async connect(sampleRate: number): Promise<void> {
+clicky-web-sdk\src\api\AssemblyAIClient.ts:29:    const tokenResponse = await
+this.workerProxy.postJson<AssemblyAITokenResponse>(this.options.apiRoutes.sttToken, {});
+clicky-web-sdk\src\api\AssemblyAIClient.ts:35:    const websocketUrl =
+clicky-web-sdk\src\api\AssemblyAIClient.ts:36:      tokenResponse.provider === "deepgram" || tokenResponse.provider 
+=== "deepgram-proxy"
+clicky-web-sdk\src\api\AssemblyAIClient.ts:37:        ? this.createDeepgramWebsocketUrl(tokenResponse, sampleRate)
+clicky-web-sdk\src\api\AssemblyAIClient.ts:38:        : this.createAssemblyAIWebsocketUrl(tokenResponse, sampleRate);
+clicky-web-sdk\src\api\AssemblyAIClient.ts:40:    this.websocket = new WebSocket(websocketUrl);
+clicky-web-sdk\src\api\AssemblyAIClient.ts:41:    this.websocket.binaryType = "arraybuffer";
+clicky-web-sdk\src\api\AssemblyAIClient.ts:42:    this.websocket.onmessage = (event) => this.handleMessage(event);
+clicky-web-sdk\src\api\AssemblyAIClient.ts:43:    this.websocket.onerror = () => {
+clicky-web-sdk\src\api\AssemblyAIClient.ts:44:      this.logger.error("stt.websocket.error");
+clicky-web-sdk\src\api\AssemblyAIClient.ts:45:      this.eventBus.emit("error", { error: new Error("Speech websocket 
+error") });
+clicky-web-sdk\src\api\AssemblyAIClient.ts:47:    this.websocket.onclose = (event) => {
+clicky-web-sdk\src\api\AssemblyAIClient.ts:48:      this.logger.warn("stt.websocket.closed", { code: event.code, 
+reason: event.reason || "unknown" });
+clicky-web-sdk\src\api\AssemblyAIClient.ts:52:      if (!this.websocket) {
+clicky-web-sdk\src\api\AssemblyAIClient.ts:53:        reject(new Error("Speech websocket was not created"));
+clicky-web-sdk\src\api\AssemblyAIClient.ts:58:      this.websocket.addEventListener("open", () => {
+clicky-web-sdk\src\api\AssemblyAIClient.ts:60:        this.logger.info("stt.websocket.connected", { provider: 
+tokenResponse.provider ?? "assemblyai" });
+clicky-web-sdk\src\api\AssemblyAIClient.ts:63:      this.websocket.addEventListener("close", () => {
+clicky-web-sdk\src\api\AssemblyAIClient.ts:65:          reject(new Error("Speech websocket closed before opening"));
+clicky-web-sdk\src\api\AssemblyAIClient.ts:71:  sendAudioFrame(pcm16: Int16Array): void {
+clicky-web-sdk\src\api\AssemblyAIClient.ts:72:    if (this.websocket?.readyState !== WebSocket.OPEN) {
+clicky-web-sdk\src\api\AssemblyAIClient.ts:76:    this.websocket.send(pcm16.buffer.slice(pcm16.byteOffset, 
+pcm16.byteOffset + pcm16.byteLength));
+clicky-web-sdk\src\api\AssemblyAIClient.ts:80:    if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+clicky-web-sdk\src\api\AssemblyAIClient.ts:81:      this.websocket.send(JSON.stringify({ type: this.provider === 
+"assemblyai" ? "Terminate" : "CloseStream" }));
+clicky-web-sdk\src\api\AssemblyAIClient.ts:83:    this.websocket?.close();
+clicky-web-sdk\src\api\AssemblyAIClient.ts:84:    this.websocket = undefined;
+clicky-web-sdk\src\api\AssemblyAIClient.ts:85:    this.logger.info("stt.websocket.terminated");
+clicky-web-sdk\src\api\AssemblyAIClient.ts:88:  async finishTurn(): Promise<void> {
+clicky-web-sdk\src\api\AssemblyAIClient.ts:89:    if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) 
+{
+clicky-web-sdk\src\api\AssemblyAIClient.ts:90:      this.emitLatestTranscriptAsFinal("websocket not open");
+clicky-web-sdk\src\api\AssemblyAIClient.ts:95:    this.websocket.send(JSON.stringify({ type: this.provider === 
+"assemblyai" ? "Terminate" : "CloseStream" }));
+clicky-web-sdk\src\api\AssemblyAIClient.ts:98:    this.websocket.close();
+clicky-web-sdk\src\api\AssemblyAIClient.ts:99:    this.websocket = undefined;
+clicky-web-sdk\src\api\AssemblyAIClient.ts:100:    this.logger.info("stt.websocket.finished");
+clicky-web-sdk\src\api\AssemblyAIClient.ts:114:        speech_final?: boolean;
+clicky-web-sdk\src\api\AssemblyAIClient.ts:123:      if (message.type === "Turn" || message.type === "FinalTranscript" 
+|| message.is_final || message.speech_final) {
+clicky-web-sdk\src\api\AssemblyAIClient.ts:137:      this.eventBus.emit("error", { error: new Error("Could not parse
+AssemblyAI message") });
+clicky-web-sdk\src\api\AssemblyAIClient.ts:141:  private createAssemblyAIWebsocketUrl(tokenResponse: 
+AssemblyAITokenResponse, sampleRate: number): URL {
+clicky-web-sdk\src\api\AssemblyAIClient.ts:142:    const websocketUrl = new 
+URL("wss://streaming.assemblyai.com/v3/ws");
+clicky-web-sdk\src\api\AssemblyAIClient.ts:143:    websocketUrl.searchParams.set("sample_rate", String(sampleRate));
+clicky-web-sdk\src\api\AssemblyAIClient.ts:144:    websocketUrl.searchParams.set("formatted_finals", "true");
+clicky-web-sdk\src\api\AssemblyAIClient.ts:145:    websocketUrl.searchParams.set("token", tokenResponse.token);
+clicky-web-sdk\src\api\AssemblyAIClient.ts:146:    return websocketUrl;
+clicky-web-sdk\src\api\AssemblyAIClient.ts:149:  private createDeepgramWebsocketUrl(tokenResponse: 
+AssemblyAITokenResponse, sampleRate: number): URL {
+clicky-web-sdk\src\api\AssemblyAIClient.ts:150:    const websocketUrl = new URL(tokenResponse.websocketUrl ?? 
+"wss://api.deepgram.com/v1/listen");
+clicky-web-sdk\src\api\AssemblyAIClient.ts:151:    websocketUrl.searchParams.set("sample_rate", String(sampleRate));
+clicky-web-sdk\src\api\AssemblyAIClient.ts:153:      websocketUrl.searchParams.set("token", tokenResponse.token);
+clicky-web-sdk\src\api\AssemblyAIClient.ts:155:    return websocketUrl;
+--- clicky-web-sdk/src/api/ElevenLabsClient.ts
+clicky-web-sdk\src\api\ElevenLabsClient.ts:2:import type { NormalizedClickyOptions } from "../core/types";
+clicky-web-sdk\src\api\ElevenLabsClient.ts:4:import { AudioPlayer } from "../audio/AudioPlayer";
+clicky-web-sdk\src\api\ElevenLabsClient.ts:7:export class ElevenLabsClient {
+clicky-web-sdk\src\api\ElevenLabsClient.ts:12:    private readonly audioPlayer: AudioPlayer,
+clicky-web-sdk\src\api\ElevenLabsClient.ts:17:  async speak(text: string): Promise<void> {
+clicky-web-sdk\src\api\ElevenLabsClient.ts:26:      const audioBuffer = await 
+this.workerProxy.postBinary(this.options.apiRoutes.tts, {
+clicky-web-sdk\src\api\ElevenLabsClient.ts:28:        googleLanguageCode: "en-US",
+clicky-web-sdk\src\api\ElevenLabsClient.ts:29:        googleVoiceName: "en-US-Chirp3-HD-Zephyr",
+clicky-web-sdk\src\api\ElevenLabsClient.ts:30:        googleSpeakingRate: 0.96,
+clicky-web-sdk\src\api\ElevenLabsClient.ts:31:        googlePitch: 0,
+clicky-web-sdk\src\api\ElevenLabsClient.ts:32:        googleVolumeGainDb: 0,
+clicky-web-sdk\src\api\ElevenLabsClient.ts:33:        googleEffectsProfileId: "headphone-class-device",
+clicky-web-sdk\src\api\ElevenLabsClient.ts:34:        modelId: "eleven_flash_v2_5"
+clicky-web-sdk\src\api\ElevenLabsClient.ts:36:      this.logger.info("tts.response.received", { bytes:
+audioBuffer.byteLength });
+clicky-web-sdk\src\api\ElevenLabsClient.ts:37:      await this.audioPlayer.play(audioBuffer);
+--- clicky-web-sdk/src/audio/MicCapture.ts
+clicky-web-sdk\src\audio\MicCapture.ts:4:export type AudioFrameHandler = (pcm16Frame: Int16Array) => void;
+clicky-web-sdk\src\audio\MicCapture.ts:5:export type AudioLevelHandler = (level: number) => void;
+clicky-web-sdk\src\audio\MicCapture.ts:7:export class MicCapture {
+clicky-web-sdk\src\audio\MicCapture.ts:8:  private stream?: MediaStream;
+clicky-web-sdk\src\audio\MicCapture.ts:9:  private audioContext?: AudioContext;
+clicky-web-sdk\src\audio\MicCapture.ts:11:  private source?: MediaStreamAudioSourceNode;
+clicky-web-sdk\src\audio\MicCapture.ts:12:  private audioFrameHandler?: AudioFrameHandler;
+clicky-web-sdk\src\audio\MicCapture.ts:13:  private audioLevelHandler?: AudioLevelHandler;
+clicky-web-sdk\src\audio\MicCapture.ts:16:  onAudioFrame(handler: AudioFrameHandler): void {
+clicky-web-sdk\src\audio\MicCapture.ts:17:    this.audioFrameHandler = handler;
+clicky-web-sdk\src\audio\MicCapture.ts:20:  onAudioLevel(handler: AudioLevelHandler): void {
+clicky-web-sdk\src\audio\MicCapture.ts:21:    this.audioLevelHandler = handler;
+clicky-web-sdk\src\audio\MicCapture.ts:24:  async start(): Promise<number> {
+clicky-web-sdk\src\audio\MicCapture.ts:26:    this.stream = await navigator.mediaDevices.getUserMedia({
+clicky-web-sdk\src\audio\MicCapture.ts:27:      audio: {
+clicky-web-sdk\src\audio\MicCapture.ts:36:      label: this.stream.getAudioTracks()[0]?.label ?? "unknown"
+clicky-web-sdk\src\audio\MicCapture.ts:39:    const AudioContextConstructor = window.AudioContext || 
+window.webkitAudioContext;
+clicky-web-sdk\src\audio\MicCapture.ts:40:    this.audioContext = new AudioContextConstructor({ sampleRate: 16000 });
+clicky-web-sdk\src\audio\MicCapture.ts:41:    this.source = this.audioContext.createMediaStreamSource(this.stream);
+clicky-web-sdk\src\audio\MicCapture.ts:44:    // provided for browsers/hosts that want to swap in AudioWorklet later.
+clicky-web-sdk\src\audio\MicCapture.ts:45:    this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+clicky-web-sdk\src\audio\MicCapture.ts:46:    this.processor.onaudioprocess = (event) => {
+clicky-web-sdk\src\audio\MicCapture.ts:48:      this.audioLevelHandler?.(this.calculateLevel(channelData));
+clicky-web-sdk\src\audio\MicCapture.ts:49:      this.audioFrameHandler?.(floatToPcm16(channelData));
+clicky-web-sdk\src\audio\MicCapture.ts:53:    this.processor.connect(this.audioContext.destination);
+clicky-web-sdk\src\audio\MicCapture.ts:54:    this.logger.info("mic.capture.started", { sampleRate:
+this.audioContext.sampleRate });
+clicky-web-sdk\src\audio\MicCapture.ts:55:    return this.audioContext.sampleRate;
+clicky-web-sdk\src\audio\MicCapture.ts:63:    for (const track of this.stream?.getTracks() ?? []) {
+clicky-web-sdk\src\audio\MicCapture.ts:67:    if (this.audioContext && this.audioContext.state !== "closed") {
+clicky-web-sdk\src\audio\MicCapture.ts:68:      void this.audioContext.close();
+clicky-web-sdk\src\audio\MicCapture.ts:73:    this.stream = undefined;
+clicky-web-sdk\src\audio\MicCapture.ts:74:    this.audioContext = undefined;
+--- clicky-web-sdk/src/context/ContextCollector.ts
+clicky-web-sdk\src\context\ContextCollector.ts:1:import type { ClickyCapturedContext, NormalizedClickyOptions } from 
+"../core/types";
+clicky-web-sdk\src\context\ContextCollector.ts:6:export class ContextCollector {
+clicky-web-sdk\src\context\ContextCollector.ts:18:  async capture(options: { includeScreenshot?: boolean } = {}): 
+Promise<ClickyCapturedContext> {
+clicky-web-sdk\src\context\ContextCollector.ts:29:      tenantId: this.options.tenantId,
+clicky-web-sdk\src\context\ContextCollector.ts:31:      sessionId: this.options.sessionId,
+--- clicky-web-sdk/src/context/DomSnapshot.ts
+clicky-web-sdk\src\context\DomSnapshot.ts:1:import type { ClickyCapturedElement, ClickyRect, NormalizedClickyOptions } 
+from "../core/types";
+clicky-web-sdk\src\context\DomSnapshot.ts:4:import { Redaction } from "./Redaction";
+clicky-web-sdk\src\context\DomSnapshot.ts:29:export type DomSnapshotResult = {
+clicky-web-sdk\src\context\DomSnapshot.ts:34:export class DomSnapshot {
+clicky-web-sdk\src\context\DomSnapshot.ts:35:  private readonly redaction: Redaction;
+clicky-web-sdk\src\context\DomSnapshot.ts:41:    this.redaction = new Redaction(options);
+clicky-web-sdk\src\context\DomSnapshot.ts:56:      if (this.redaction.shouldIgnoreElement(candidateElement) || 
+!isVisibleElement(candidateElement)) {
+clicky-web-sdk\src\context\DomSnapshot.ts:120:        return element.placeholder || element.name || (element
+instanceof HTMLInputElement ? element.type : "textarea");
+clicky-web-sdk\src\context\DomSnapshot.ts:129:    if (this.redaction.isPrivateElement(element)) {
+clicky-web-sdk\src\context\DomSnapshot.ts:133:    const inputValue = this.redaction.getSafeInputValue(element);
+clicky-web-sdk\src\context\DomSnapshot.ts:134:    const elementText = this.redaction.getSafeTextContent(element);
+--- clicky-web-sdk/src/context/ScreenshotCapture.ts
+clicky-web-sdk\src\context\ScreenshotCapture.ts:1:import type { ClickyScreenshot } from "../core/types";
+clicky-web-sdk\src\context\ScreenshotCapture.ts:3:export class ScreenshotCapture {
+clicky-web-sdk\src\context\ScreenshotCapture.ts:4:  async captureStill(label = "user-selected browser surface"): 
+Promise<ClickyScreenshot> {
+clicky-web-sdk\src\context\ScreenshotCapture.ts:5:    if (!navigator.mediaDevices?.getDisplayMedia) {
+clicky-web-sdk\src\context\ScreenshotCapture.ts:9:    const stream = await navigator.mediaDevices.getDisplayMedia({
+clicky-web-sdk\src\context\ScreenshotCapture.ts:11:      audio: false
+clicky-web-sdk\src\context\ScreenshotCapture.ts:17:      video.srcObject = stream;
+clicky-web-sdk\src\context\ScreenshotCapture.ts:48:      for (const track of stream.getTracks()) {
+--- clicky-web-sdk/src/context/SemanticMapObserver.ts
+clicky-web-sdk\src\context\SemanticMapObserver.ts:3:export type SemanticMapObserverHandler = () => void;
+clicky-web-sdk\src\context\SemanticMapObserver.ts:5:export class SemanticMapObserver {
+clicky-web-sdk\src\context\SemanticMapObserver.ts:6:  private mutationObserver?: MutationObserver;
+clicky-web-sdk\src\context\SemanticMapObserver.ts:12:    if (this.mutationObserver) {
+clicky-web-sdk\src\context\SemanticMapObserver.ts:17:    this.mutationObserver = new MutationObserver(() => 
+debouncedChangeHandler());
+clicky-web-sdk\src\context\SemanticMapObserver.ts:18:    this.mutationObserver.observe(document.body, {
+clicky-web-sdk\src\context\SemanticMapObserver.ts:39:    this.mutationObserver?.disconnect();
+clicky-web-sdk\src\context\SemanticMapObserver.ts:40:    this.mutationObserver = undefined;
+--- clicky-web-sdk/src/overlay/CursorOverlay.ts
+clicky-web-sdk\src\overlay\CursorOverlay.ts:1:import type { ClickyPointCommand } from "../core/types";
+clicky-web-sdk\src\overlay\CursorOverlay.ts:3:import { CursorAnimator } from "./CursorAnimator";
+clicky-web-sdk\src\overlay\CursorOverlay.ts:4:import { ElementHighlighter } from "./ElementHighlighter";
+clicky-web-sdk\src\overlay\CursorOverlay.ts:6:export class CursorOverlay {
+clicky-web-sdk\src\overlay\CursorOverlay.ts:7:  private readonly animator: CursorAnimator;
+clicky-web-sdk\src\overlay\CursorOverlay.ts:8:  private readonly highlighter: ElementHighlighter;
+clicky-web-sdk\src\overlay\CursorOverlay.ts:16:    const cursorElement = document.createElement("div");
+clicky-web-sdk\src\overlay\CursorOverlay.ts:17:    cursorElement.className = "clicky-cursor";
+clicky-web-sdk\src\overlay\CursorOverlay.ts:20:    this.rootElement.append(cursorElement, bubbleElement);
+clicky-web-sdk\src\overlay\CursorOverlay.ts:21:    this.animator = new CursorAnimator(cursorElement, bubbleElement);
+clicky-web-sdk\src\overlay\CursorOverlay.ts:22:    this.highlighter = new ElementHighlighter(rootElement);
+clicky-web-sdk\src\overlay\CursorOverlay.ts:25:  point(command: ClickyPointCommand): boolean {
+clicky-web-sdk\src\overlay\CursorOverlay.ts:26:    if (command.type === "none") {
+clicky-web-sdk\src\overlay\CursorOverlay.ts:30:    if (command.type === "coordinate") {
+clicky-web-sdk\src\overlay\CursorOverlay.ts:31:      this.animator.pointAt(command.x, command.y, command.label);
+clicky-web-sdk\src\overlay\CursorOverlay.ts:40:    this.pointAtElement(targetElement, command.label);
+clicky-web-sdk\src\overlay\CursorOverlay.ts:44:  pointAtElement(targetElement: Element, label?: string): void {
+clicky-web-sdk\src\overlay\CursorOverlay.ts:50:    this.highlighter.destroy();
+clicky-web-sdk\src\overlay\CursorOverlay.ts:59:        this.highlighter.clear();
+clicky-web-sdk\src\overlay\CursorOverlay.ts:67:        this.highlighter.clear();
+clicky-web-sdk\src\overlay\CursorOverlay.ts:69:        this.highlighter.show(rect);
+--- clicky-web-sdk/src/overlay/ElementHighlighter.ts
+clicky-web-sdk\src\overlay\ElementHighlighter.ts:1:export class ElementHighlighter {
+clicky-web-sdk\src\overlay\ElementHighlighter.ts:2:  private readonly highlightElement: HTMLElement;
+clicky-web-sdk\src\overlay\ElementHighlighter.ts:6:    this.highlightElement = document.createElement("div");
+clicky-web-sdk\src\overlay\ElementHighlighter.ts:7:    this.highlightElement.className = "clicky-element-highlight";
+clicky-web-sdk\src\overlay\ElementHighlighter.ts:10:    this.rootElement.append(this.highlightElement, 
+this.pulseElement);
+clicky-web-sdk\src\overlay\ElementHighlighter.ts:14:    this.applyRect(this.highlightElement, rect, 0);
+clicky-web-sdk\src\overlay\ElementHighlighter.ts:16:    this.highlightElement.classList.add("is-visible");
+clicky-web-sdk\src\overlay\ElementHighlighter.ts:21:    this.highlightElement.classList.remove("is-visible");
+clicky-web-sdk\src\overlay\ElementHighlighter.ts:26:    this.highlightElement.remove();
+--- clicky-web-sdk/src/panel/CompanionPanel.ts
+clicky-web-sdk\src\panel\CompanionPanel.ts:1:import type { ClickyState } from "../core/types";
+clicky-web-sdk\src\panel\CompanionPanel.ts:5:export type CompanionPanelHandlers = {
+clicky-web-sdk\src\panel\CompanionPanel.ts:9:  onConfirmAction(): void;
+clicky-web-sdk\src\panel\CompanionPanel.ts:10:  onRejectAction(): void;
+clicky-web-sdk\src\panel\CompanionPanel.ts:13:export class CompanionPanel {
+clicky-web-sdk\src\panel\CompanionPanel.ts:49:    sendButton.type = "submit";
+clicky-web-sdk\src\panel\CompanionPanel.ts:64:    this.micButton.addEventListener("pointerdown", () => 
+this.handlers.onStartTalk());
+clicky-web-sdk\src\panel\CompanionPanel.ts:65:    this.micButton.addEventListener("pointerup", () => 
+this.handlers.onStopTalk());
+clicky-web-sdk\src\panel\CompanionPanel.ts:66:    this.micButton.addEventListener("pointercancel", () => 
+this.handlers.onStopTalk());
+clicky-web-sdk\src\panel\CompanionPanel.ts:88:  updateStreamingAssistantMessage(text: string): void {
+clicky-web-sdk\src\panel\CompanionPanel.ts:89:    let messageElement =
+this.threadElement.querySelector<HTMLElement>("[data-clicky-streaming-message='true']");
+clicky-web-sdk\src\panel\CompanionPanel.ts:92:      messageElement.dataset.clickyStreamingMessage = "true";
+clicky-web-sdk\src\panel\CompanionPanel.ts:100:  finishStreamingAssistantMessage(text: string): void {
+clicky-web-sdk\src\panel\CompanionPanel.ts:101:    const messageElement =
+this.threadElement.querySelector<HTMLElement>("[data-clicky-streaming-message='true']");
+clicky-web-sdk\src\panel\CompanionPanel.ts:103:      delete messageElement.dataset.clickyStreamingMessage;
+clicky-web-sdk\src\panel\CompanionPanel.ts:110:  showActionConfirmation(actionName: string): void {
+clicky-web-sdk\src\panel\CompanionPanel.ts:111:
+this.confirmElement.querySelector("[data-clicky-confirm-text]")!.textContent = `Run action: ${actionName}?`;
+clicky-web-sdk\src\panel\CompanionPanel.ts:115:  hideActionConfirmation(): void {
+clicky-web-sdk\src\panel\CompanionPanel.ts:126:    confirmButton.type = "button";
+clicky-web-sdk\src\panel\CompanionPanel.ts:130:    rejectButton.type = "button";
+clicky-web-sdk\src\panel\CompanionPanel.ts:132:    confirmButton.addEventListener("click", () =>
+this.handlers.onConfirmAction());
+clicky-web-sdk\src\panel\CompanionPanel.ts:133:    rejectButton.addEventListener("click", () =>
+this.handlers.onRejectAction());
+--- clicky-web-sdk/src/actions/ActionExecutor.ts
+clicky-web-sdk\src\actions\ActionExecutor.ts:1:import type {
+clicky-web-sdk\src\actions\ActionExecutor.ts:2:  ClickyActionContext,
+clicky-web-sdk\src\actions\ActionExecutor.ts:3:  ClickyActionDefinition,
+clicky-web-sdk\src\actions\ActionExecutor.ts:4:  ClickyActionResult,
+clicky-web-sdk\src\actions\ActionExecutor.ts:6:  ClickyProposedAction
+clicky-web-sdk\src\actions\ActionExecutor.ts:9:import { validateRequiredObjectProperties } from "./actionTypes";
+clicky-web-sdk\src\actions\ActionExecutor.ts:11:export class ActionExecutor {
+clicky-web-sdk\src\actions\ActionExecutor.ts:14:  createProposedAction(
+clicky-web-sdk\src\actions\ActionExecutor.ts:15:    actionDefinition: ClickyActionDefinition,
+clicky-web-sdk\src\actions\ActionExecutor.ts:17:  ): ClickyProposedAction {
+clicky-web-sdk\src\actions\ActionExecutor.ts:18:    const missingProperties =
+validateRequiredObjectProperties(actionDefinition.parametersSchema, parameters);
+clicky-web-sdk\src\actions\ActionExecutor.ts:20:      throw new Error(`Action ${actionDefinition.id} is missing 
+required parameter(s): ${missingProperties.join(", ")}`);
+clicky-web-sdk\src\actions\ActionExecutor.ts:23:    if (!actionDefinition.allowSensitiveFields && 
+this.includesSensitiveParameter(parameters)) {
+clicky-web-sdk\src\actions\ActionExecutor.ts:24:      throw new Error(`Action ${actionDefinition.id} attempted to use 
+a sensitive parameter`);
+clicky-web-sdk\src\actions\ActionExecutor.ts:28:      actionId: actionDefinition.id,
+clicky-web-sdk\src\actions\ActionExecutor.ts:30:      definition: actionDefinition
+clicky-web-sdk\src\actions\ActionExecutor.ts:34:  async executeAction(action: ClickyProposedAction, capturedContext: 
+ClickyCapturedContext): Promise<ClickyActionResult> {
+clicky-web-sdk\src\actions\ActionExecutor.ts:35:    const actionContext: ClickyActionContext = {
+clicky-web-sdk\src\actions\ActionExecutor.ts:42:    return await action.definition.execute(action.parameters, 
+actionContext);
+clicky-web-sdk\src\actions\ActionExecutor.ts:63:  private includesSensitiveParameter(parameters: Record<string, 
+unknown>): boolean {
+--- clicky-web-sdk/src/api/WorkerProxy.ts
+clicky-web-sdk\src\api\WorkerProxy.ts:3:export class WorkerProxy {
+clicky-web-sdk\src\api\WorkerProxy.ts:11:  async getJson<ResponseBody>(path: string, init: RequestInit = {}): 
+Promise<ResponseBody> {
+clicky-web-sdk\src\api\WorkerProxy.ts:16:      response = await fetch(requestUrl, {
+clicky-web-sdk\src\api\WorkerProxy.ts:39:  async postJson<ResponseBody>(path: string, body: unknown, init: RequestInit 
+= {}): Promise<ResponseBody> {
+clicky-web-sdk\src\api\WorkerProxy.ts:44:      response = await fetch(requestUrl, {
+clicky-web-sdk\src\api\WorkerProxy.ts:69:  async postBinary(path: string, body: unknown, init: RequestInit = {}): 
+Promise<ArrayBuffer> {
+clicky-web-sdk\src\api\WorkerProxy.ts:74:      response = await fetch(requestUrl, {
+clicky-web-sdk\src\api\WorkerProxy.ts:99:  async fetchStream(path: string, body: unknown, init: RequestInit = {}): 
+Promise<ReadableStream<Uint8Array>> {
+clicky-web-sdk\src\api\WorkerProxy.ts:104:      response = await fetch(requestUrl, {
+clicky-web-sdk\src\api\WorkerProxy.ts:115:      this.logger.error("POST stream failed", { url: requestUrl, error: 
+String(error) });
+clicky-web-sdk\src\api\WorkerProxy.ts:120:      this.logger.warn("POST stream non-200", { url: requestUrl, status: 
+response.status });
+clicky-web-sdk\src\api\WorkerProxy.ts:125:      throw new Error("Worker response did not include a stream body");
+clicky-web-sdk\src\api\WorkerProxy.ts:128:    this.logger.info("POST stream ok", { url: requestUrl, ms: 
+Math.round(performance.now() - startedAt) });
+clicky-web-sdk\src\api\WorkerProxy.ts:136:  private async createError(response: Response): Promise<Error> {
+--- round-voice-437d/src/index.ts
+round-voice-437d\src\index.ts:1:export interface Env {
+round-voice-437d\src\index.ts:2:  GOOGLE_CLOUD_PROJECT_ID: string;
+round-voice-437d\src\index.ts:3:  GOOGLE_APPLICATION_CREDENTIALS_JSON: string;
+round-voice-437d\src\index.ts:4:  DEEPGRAM_API_KEY: string;
+round-voice-437d\src\index.ts:5:  ELEVENLABS_API_KEY: string;
+round-voice-437d\src\index.ts:8:  POSTHOG_API_KEY: string;
+round-voice-437d\src\index.ts:9:  SENTRY_DSN: string;
+round-voice-437d\src\index.ts:15:  "Access-Control-Allow-Headers":
+"Content-Type,Authorization,x-clicky-session-id,x-clicky-tenant-id,x-clicky-user-id",
+round-voice-437d\src\index.ts:19:  async fetch(request: Request, env: Env): Promise<Response> {
+round-voice-437d\src\index.ts:34:            health: "/health",
+round-voice-437d\src\index.ts:38:            sttStream: "/voice/stt-stream",
+round-voice-437d\src\index.ts:40:            memorySave: "/memory/save",
+round-voice-437d\src\index.ts:41:            memoryLoad: "/memory/load",
+round-voice-437d\src\index.ts:42:            telemetry: "/telemetry/event",
+round-voice-437d\src\index.ts:47:      if (url.pathname === "/health") {
+round-voice-437d\src\index.ts:51:            vertex: !!env.GOOGLE_CLOUD_PROJECT_ID,
+round-voice-437d\src\index.ts:52:            deepgram: !!env.DEEPGRAM_API_KEY,
+round-voice-437d\src\index.ts:53:            elevenlabs: !!env.ELEVENLABS_API_KEY,
+round-voice-437d\src\index.ts:56:            posthog: !!env.POSTHOG_API_KEY,
+round-voice-437d\src\index.ts:57:            sentry: !!env.SENTRY_DSN,
+round-voice-437d\src\index.ts:74:          env.GOOGLE_APPLICATION_CREDENTIALS_JSON
+round-voice-437d\src\index.ts:79:        const tokenResponse = await fetch(
+round-voice-437d\src\index.ts:80:          "https://oauth2.googleapis.com/token",
+round-voice-437d\src\index.ts:88:              assertion: jwt,
+round-voice-437d\src\index.ts:98:        const vertexResponse = await fetch(
+round-voice-437d\src\index.ts:99:          `https://us-central1-aiplatform.googleapis.com/v1/projects/${env.GOOGLE_CLOU
+D_PROJECT_ID}/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent`,
+round-voice-437d\src\index.ts:130:        const deepgramTokenResponse = await 
+fetch("https://api.deepgram.com/v1/auth/grant", {
+round-voice-437d\src\index.ts:133:            Authorization: `Token ${env.DEEPGRAM_API_KEY}`,
+round-voice-437d\src\index.ts:139:        if (!deepgramTokenResponse.ok) {
+round-voice-437d\src\index.ts:140:          const upstreamError = await deepgramTokenResponse.text().catch(() => "");
+round-voice-437d\src\index.ts:141:          const websocketProtocol = url.protocol === "https:" ? "wss:" : "ws:";
+round-voice-437d\src\index.ts:144:            provider: "deepgram-proxy",
+round-voice-437d\src\index.ts:146:            websocketUrl: `${websocketProtocol}//${url.host}/voice/stt-stream`,
+round-voice-437d\src\index.ts:148:            fallbackReason: "Deepgram temporary token grant unavailable; using 
+Worker WebSocket proxy.",
+round-voice-437d\src\index.ts:149:            upstreamStatus: deepgramTokenResponse.status,
+round-voice-437d\src\index.ts:150:            upstreamError: upstreamError.slice(0, 300),
+round-voice-437d\src\index.ts:154:        const deepgramTokenData = (await deepgramTokenResponse.json()) as {
+round-voice-437d\src\index.ts:158:        const temporaryToken = deepgramTokenData.access_token ?? 
+deepgramTokenData.token;
+round-voice-437d\src\index.ts:164:              error: "Deepgram did not return a temporary token.",
+round-voice-437d\src\index.ts:173:          provider: "deepgram",
+round-voice-437d\src\index.ts:174:          websocketUrl: "wss://api.deepgram.com/v1/listen"
+round-voice-437d\src\index.ts:178:      if (url.pathname === "/voice/stt-stream") {
+round-voice-437d\src\index.ts:179:        return handleDeepgramStreamingProxy(request, url, env);
+round-voice-437d\src\index.ts:188:        const audioBase64 = body.audioBase64;
+round-voice-437d\src\index.ts:189:        const contentType = body.contentType || "audio/wav";
+round-voice-437d\src\index.ts:193:        if (!audioBase64) {
+round-voice-437d\src\index.ts:197:              error: "Missing audioBase64 in request body.",
+round-voice-437d\src\index.ts:203:        const audioBuffer = base64ToArrayBuffer(audioBase64);
+round-voice-437d\src\index.ts:204:        const googleSpeechResult = await transcribeGoogleSpeech(
+round-voice-437d\src\index.ts:205:          audioBase64,
+round-voice-437d\src\index.ts:211:        if (googleSpeechResult.transcript) {
+round-voice-437d\src\index.ts:214:            provider: "google",
+round-voice-437d\src\index.ts:215:            transcript: googleSpeechResult.transcript,
+round-voice-437d\src\index.ts:216:            result: googleSpeechResult.raw,
+round-voice-437d\src\index.ts:220:        const deepgramResponse = await fetch(
+round-voice-437d\src\index.ts:221:          "https://api.deepgram.com/v1/listen",
+round-voice-437d\src\index.ts:225:              Authorization: `Token ${env.DEEPGRAM_API_KEY}`,
+round-voice-437d\src\index.ts:228:            body: audioBuffer,
+round-voice-437d\src\index.ts:232:        const deepgramResult = await deepgramResponse.json();
+round-voice-437d\src\index.ts:236:          provider: "deepgram",
+round-voice-437d\src\index.ts:237:          result: deepgramResult,
+round-voice-437d\src\index.ts:238:          googleError: googleSpeechResult.error,
+round-voice-437d\src\index.ts:250:        const modelId = body.modelId || "eleven_flash_v2_5";
+round-voice-437d\src\index.ts:251:        const googleLanguageCode = body.googleLanguageCode || "en-US";
+round-voice-437d\src\index.ts:252:        const googleVoiceName = body.googleVoiceName || "en-US-Chirp3-HD-Zephyr";
+round-voice-437d\src\index.ts:253:        const googleSpeakingRate = Number(body.googleSpeakingRate ?? 0.96);
+round-voice-437d\src\index.ts:254:        const googlePitch = Number(body.googlePitch ?? 0);
+round-voice-437d\src\index.ts:255:        const googleVolumeGainDb = Number(body.googleVolumeGainDb ?? 0);
+round-voice-437d\src\index.ts:256:        const googleEffectsProfileId = body.googleEffectsProfileId || 
+"headphone-class-device";
+round-voice-437d\src\index.ts:268:        const googleTtsAudio = await synthesizeGoogleTts(
+round-voice-437d\src\index.ts:270:          googleLanguageCode,
+round-voice-437d\src\index.ts:271:          googleVoiceName,
+round-voice-437d\src\index.ts:272:          googleSpeakingRate,
+round-voice-437d\src\index.ts:273:          googlePitch,
+round-voice-437d\src\index.ts:274:          googleVolumeGainDb,
+round-voice-437d\src\index.ts:275:          googleEffectsProfileId,
+round-voice-437d\src\index.ts:278:        if (googleTtsAudio) {
+round-voice-437d\src\index.ts:279:          return new Response(googleTtsAudio, {
+round-voice-437d\src\index.ts:283:              "Content-Type": "audio/mpeg",
+round-voice-437d\src\index.ts:289:          const elevenLabsAudio = await synthesizeElevenLabsTts(
+round-voice-437d\src\index.ts:295:          if (elevenLabsAudio) {
+round-voice-437d\src\index.ts:296:            return new Response(elevenLabsAudio, {
+round-voice-437d\src\index.ts:300:                "Content-Type": "audio/mpeg",
+round-voice-437d\src\index.ts:309:            error: "TTS failed for both Google and ElevenLabs.",
+round-voice-437d\src\index.ts:315:      if (url.pathname === "/memory/save") {
+round-voice-437d\src\index.ts:342:        const upstashResponse = await fetch(upstashUrl, {
+round-voice-437d\src\index.ts:357:      if (url.pathname === "/memory/load") {
+round-voice-437d\src\index.ts:379:        const upstashResponse = await fetch(upstashUrl, {
+round-voice-437d\src\index.ts:394:      if (url.pathname === "/telemetry/event") {
+round-voice-437d\src\index.ts:400:        const posthogEvent = body.posthogEvent;
+round-voice-437d\src\index.ts:401:        const sentryEnvelope = body.sentryEnvelope;
+round-voice-437d\src\index.ts:403:        if (!posthogEvent && !sentryEnvelope) {
+round-voice-437d\src\index.ts:407:              error: "Missing posthogEvent or sentryEnvelope in request body.",
+round-voice-437d\src\index.ts:415:        if (posthogEvent) {
+round-voice-437d\src\index.ts:416:          const posthogResponse = await fetch(
+round-voice-437d\src\index.ts:417:            "https://app.posthog.com/capture/",
+round-voice-437d\src\index.ts:424:                api_key: env.POSTHOG_API_KEY,
+round-voice-437d\src\index.ts:425:                ...posthogEvent,
+round-voice-437d\src\index.ts:430:          results.posthogStatus = posthogResponse.status;
+round-voice-437d\src\index.ts:433:        if (sentryEnvelope) {
+round-voice-437d\src\index.ts:434:          const sentryEnvelopeUrl = buildSentryEnvelopeUrl(
+round-voice-437d\src\index.ts:435:            env.SENTRY_DSN
+round-voice-437d\src\index.ts:438:          const sentryResponse = await fetch(sentryEnvelopeUrl, {
+round-voice-437d\src\index.ts:441:              "Content-Type": "application/x-sentry-envelope",
+round-voice-437d\src\index.ts:443:            body: sentryEnvelope,
+round-voice-437d\src\index.ts:446:          results.sentryStatus = sentryResponse.status;
+round-voice-437d\src\index.ts:468:async function createJWT(credentials: any) {
+round-voice-437d\src\index.ts:478:    scope: "https://www.googleapis.com/auth/cloud-platform",
+round-voice-437d\src\index.ts:479:    aud: "https://oauth2.googleapis.com/token",
+round-voice-437d\src\index.ts:522:function pemToArrayBuffer(pem: string) {
+round-voice-437d\src\index.ts:538:function methodNotAllowed(expectedMethod: string) {
+round-voice-437d\src\index.ts:542:      error: `Use ${expectedMethod} for this endpoint.`,
+round-voice-437d\src\index.ts:548:function jsonResponse(
+round-voice-437d\src\index.ts:561:function handleDeepgramStreamingProxy(
+round-voice-437d\src\index.ts:566:  if (request.headers.get("Upgrade") !== "websocket") {
+round-voice-437d\src\index.ts:570:        error: "Use a WebSocket connection for /voice/stt-stream.",
+round-voice-437d\src\index.ts:577:  const deepgramUrl = new URL("wss://api.deepgram.com/v1/listen");
+round-voice-437d\src\index.ts:578:  deepgramUrl.searchParams.set("model", "nova-2");
+round-voice-437d\src\index.ts:579:  deepgramUrl.searchParams.set("encoding", "linear16");
+round-voice-437d\src\index.ts:580:  deepgramUrl.searchParams.set("sample_rate", sampleRate);
+round-voice-437d\src\index.ts:581:  deepgramUrl.searchParams.set("channels", "1");
+round-voice-437d\src\index.ts:582:  deepgramUrl.searchParams.set("interim_results", "true");
+round-voice-437d\src\index.ts:583:  deepgramUrl.searchParams.set("smart_format", "true");
+round-voice-437d\src\index.ts:585:  const webSocketPair = new WebSocketPair();
+round-voice-437d\src\index.ts:586:  const [clientSocket, workerSocket] = Object.values(webSocketPair);
+round-voice-437d\src\index.ts:589:  const deepgramSocket = new WebSocket(deepgramUrl.toString(), [
+round-voice-437d\src\index.ts:591:    env.DEEPGRAM_API_KEY,
+round-voice-437d\src\index.ts:593:  const queuedAudioFrames: Array<string | ArrayBuffer> = [];
+round-voice-437d\src\index.ts:596:    if (deepgramSocket.readyState === WebSocket.OPEN) {
+round-voice-437d\src\index.ts:597:      deepgramSocket.send(event.data);
+round-voice-437d\src\index.ts:602:      queuedAudioFrames.push(event.data);
+round-voice-437d\src\index.ts:608:      deepgramSocket.readyState === WebSocket.OPEN ||
+round-voice-437d\src\index.ts:609:      deepgramSocket.readyState === WebSocket.CONNECTING
+round-voice-437d\src\index.ts:611:      deepgramSocket.close();
+round-voice-437d\src\index.ts:617:      deepgramSocket.readyState === WebSocket.OPEN ||
+round-voice-437d\src\index.ts:618:      deepgramSocket.readyState === WebSocket.CONNECTING
+round-voice-437d\src\index.ts:620:      deepgramSocket.close();
+round-voice-437d\src\index.ts:624:  deepgramSocket.addEventListener("open", () => {
+round-voice-437d\src\index.ts:625:    while (queuedAudioFrames.length > 0) {
+round-voice-437d\src\index.ts:626:      const audioFrame = queuedAudioFrames.shift();
+round-voice-437d\src\index.ts:627:      if (audioFrame !== undefined) {
+round-voice-437d\src\index.ts:628:        deepgramSocket.send(audioFrame);
+round-voice-437d\src\index.ts:633:  deepgramSocket.addEventListener("message", (event) => {
+round-voice-437d\src\index.ts:634:    if (workerSocket.readyState === WebSocket.OPEN) {
+round-voice-437d\src\index.ts:639:  deepgramSocket.addEventListener("close", () => {
+round-voice-437d\src\index.ts:640:    if (workerSocket.readyState === WebSocket.OPEN) {
+round-voice-437d\src\index.ts:645:  deepgramSocket.addEventListener("error", () => {
+round-voice-437d\src\index.ts:646:    if (workerSocket.readyState === WebSocket.OPEN) {
+round-voice-437d\src\index.ts:647:      workerSocket.close(1011, "Deepgram websocket error");
+round-voice-437d\src\index.ts:653:    webSocket: clientSocket,
+round-voice-437d\src\index.ts:657:async function readJsonBody(
+round-voice-437d\src\index.ts:667:function base64ToArrayBuffer(base64: string) {
+round-voice-437d\src\index.ts:678:function buildSentryEnvelopeUrl(dsn: string) {
+round-voice-437d\src\index.ts:685:async function transcribeGoogleSpeech(
+round-voice-437d\src\index.ts:686:  audioBase64: string,
+round-voice-437d\src\index.ts:693:      env.GOOGLE_APPLICATION_CREDENTIALS_JSON
+round-voice-437d\src\index.ts:697:    const tokenResponse = await fetch(
+round-voice-437d\src\index.ts:698:      "https://oauth2.googleapis.com/token",
+round-voice-437d\src\index.ts:706:          assertion: jwt,
+round-voice-437d\src\index.ts:714:        error: `Google auth failed with ${tokenResponse.status}`,
+round-voice-437d\src\index.ts:721:    const speechResponse = await fetch(
+round-voice-437d\src\index.ts:722:      "https://speech.googleapis.com/v1/speech:recognize",
+round-voice-437d\src\index.ts:737:          audio: {
+round-voice-437d\src\index.ts:738:            content: audioBase64,
+round-voice-437d\src\index.ts:744:    const speechResult = await speechResponse.json() as {
+round-voice-437d\src\index.ts:755:    if (!speechResponse.ok) {
+round-voice-437d\src\index.ts:758:        raw: speechResult,
+round-voice-437d\src\index.ts:759:        error: speechResult.error?.message ?? `Google Speech failed with 
+${speechResponse.status}`,
+round-voice-437d\src\index.ts:763:    const transcript = speechResult.results
+round-voice-437d\src\index.ts:771:      raw: speechResult,
+round-voice-437d\src\index.ts:781:async function synthesizeGoogleTts(
+round-voice-437d\src\index.ts:793:      env.GOOGLE_APPLICATION_CREDENTIALS_JSON
+round-voice-437d\src\index.ts:797:    const tokenResponse = await fetch(
+round-voice-437d\src\index.ts:798:      "https://oauth2.googleapis.com/token",
+round-voice-437d\src\index.ts:806:          assertion: jwt,
+round-voice-437d\src\index.ts:818:    const googleTtsResponse = await fetch(
+round-voice-437d\src\index.ts:819:      "https://texttospeech.googleapis.com/v1/text:synthesize",
+round-voice-437d\src\index.ts:832:          audioConfig: {
+round-voice-437d\src\index.ts:833:            audioEncoding: "MP3",
+round-voice-437d\src\index.ts:843:    if (!googleTtsResponse.ok) {
+**********************
+PowerShell transcript end
+End time: 20260607133711
+**********************

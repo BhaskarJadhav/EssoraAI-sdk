@@ -1,0 +1,214 @@
+**********************
+PowerShell transcript start
+Start time: 20260528015502
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$logPath = Join-Path 'C:\Users\jadha\clicky.ai\logs' "$timestamp-read-companionpanel-for-revert.log"
+Start-Transcript -Path $logPath -Force | Out-Null
+Get-Content src\panel\CompanionPanel.ts
+Stop-Transcript | Out-Null
+Get-Content $logPath
+Process ID: 13544
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+import type { ClickyState } from "../core/types";
+import { createMicButton } from "./MicButton";
+import { createPermissionStatus } from "./PermissionStatus";
+
+export type CompanionPanelHandlers = {
+  onSendText(text: string): void;
+  onStartTalk(): void;
+  onStopTalk(): void;
+  onConfirmAction(): void;
+  onRejectAction(): void;
+  onSelectMicDevice(deviceId: string): void;
+  onRefreshMicDevices(): void;
+};
+
+export class CompanionPanel {
+  readonly element: HTMLElement;
+  readonly micButton: HTMLButtonElement;
+  private readonly stateElement: HTMLElement;
+  private readonly threadElement: HTMLElement;
+  private readonly inputElement: HTMLInputElement;
+  private readonly confirmElement: HTMLElement;
+  private readonly micDeviceSelectElement: HTMLSelectElement;
+  private readonly micLevelElement: HTMLElement;
+
+  constructor(private readonly handlers: CompanionPanelHandlers) {
+    this.element = document.createElement("section");
+    this.element.className = "clicky-panel";
+
+    const headerElement = document.createElement("header");
+    headerElement.className = "clicky-panel-header";
+    const titleElement = document.createElement("div");
+    titleElement.className = "clicky-title";
+    titleElement.textContent = "Clicky";
+    this.stateElement = createPermissionStatus();
+    headerElement.append(titleElement, this.stateElement);
+
+    this.threadElement = document.createElement("div");
+    this.threadElement.className = "clicky-thread";
+    this.threadElement.innerHTML = `<p class="clicky-message clicky-message-assistant">Ask about this page, or hold ctrl + option while the page is focused.</p>`;
+
+    this.confirmElement = this.createConfirmElement();
+
+    const footerElement = document.createElement("footer");
+    footerElement.className = "clicky-panel-footer";
+    const micDeviceRow = document.createElement("div");
+    micDeviceRow.className = "clicky-mic-device-row";
+    const micDeviceLabel = document.createElement("span");
+    micDeviceLabel.className = "clicky-mic-device-label";
+    micDeviceLabel.textContent = "Mic source";
+    this.micDeviceSelectElement = document.createElement("select");
+    this.micDeviceSelectElement.className = "clicky-mic-device-select";
+    this.micDeviceSelectElement.innerHTML = `<option value="">Browser default</option>`;
+    const refreshMicButton = document.createElement("button");
+    refreshMicButton.className = "clicky-button clicky-mic-refresh";
+    refreshMicButton.type = "button";
+    refreshMicButton.textContent = "Refresh";
+    this.micLevelElement = document.createElement("span");
+    this.micLevelElement.className = "clicky-mic-level";
+    this.micLevelElement.textContent = "level 0.000";
+    micDeviceRow.append(micDeviceLabel, this.micDeviceSelectElement, refreshMicButton, this.micLevelElement);
+
+    const inputRow = document.createElement("form");
+    inputRow.className = "clicky-input-row";
+    this.inputElement = document.createElement("input");
+    this.inputElement.className = "clicky-input";
+    this.inputElement.placeholder = "Ask Clicky";
+    this.micButton = createMicButton();
+    const sendButton = document.createElement("button");
+    sendButton.className = "clicky-button";
+    sendButton.type = "submit";
+    sendButton.textContent = "Send";
+    inputRow.append(this.inputElement, this.micButton, sendButton);
+    footerElement.append(micDeviceRow, inputRow);
+
+    inputRow.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const text = this.inputElement.value.trim();
+      if (!text) {
+        return;
+      }
+      this.inputElement.value = "";
+      this.handlers.onSendText(text);
+    });
+
+    this.micButton.addEventListener("pointerdown", () => this.handlers.onStartTalk());
+    this.micButton.addEventListener("pointerup", () => this.handlers.onStopTalk());
+    this.micButton.addEventListener("pointercancel", () => this.handlers.onStopTalk());
+    this.micDeviceSelectElement.addEventListener("change", () => {
+      this.handlers.onSelectMicDevice(this.micDeviceSelectElement.value);
+    });
+    refreshMicButton.addEventListener("click", () => this.handlers.onRefreshMicDevices());
+
+    this.element.append(headerElement, this.threadElement, this.confirmElement, footerElement);
+  }
+
+  setOpen(isOpen: boolean): void {
+    this.element.classList.toggle("is-open", isOpen);
+  }
+
+  setState(state: ClickyState): void {
+    this.stateElement.textContent = state;
+    this.micButton.classList.toggle("is-listening", state === "listening");
+  }
+
+  appendMessage(role: "user" | "assistant", text: string): void {
+    const messageElement = document.createElement("p");
+    messageElement.className = `clicky-message clicky-message-${role}`;
+    messageElement.textContent = `${role === "user" ? "You" : "Clicky"}: ${text}`;
+    this.threadElement.appendChild(messageElement);
+    this.threadElement.scrollTop = this.threadElement.scrollHeight;
+  }
+
+  updateStreamingAssistantMessage(text: string): void {
+    let messageElement = this.threadElement.querySelector<HTMLElement>("[data-clicky-streaming-message='true']");
+    if (!messageElement) {
+      messageElement = document.createElement("p");
+      messageElement.dataset.clickyStreamingMessage = "true";
+      messageElement.className = "clicky-message clicky-message-assistant";
+      this.threadElement.appendChild(messageElement);
+    }
+    messageElement.textContent = `Clicky: ${text}`;
+    this.threadElement.scrollTop = this.threadElement.scrollHeight;
+  }
+
+  finishStreamingAssistantMessage(text: string): void {
+    const messageElement = this.threadElement.querySelector<HTMLElement>("[data-clicky-streaming-message='true']");
+    if (messageElement) {
+      delete messageElement.dataset.clickyStreamingMessage;
+      messageElement.textContent = `Clicky: ${text}`;
+    } else {
+      this.appendMessage("assistant", text);
+    }
+  }
+
+  showActionConfirmation(actionName: string): void {
+    this.confirmElement.querySelector("[data-clicky-confirm-text]")!.textContent = `Run action: ${actionName}?`;
+    this.confirmElement.classList.add("is-visible");
+  }
+
+  setMicDevices(devices: Array<{ deviceId: string; label: string }>, selectedDeviceId = ""): void {
+    const currentSelectedDeviceId = selectedDeviceId || this.micDeviceSelectElement.value;
+    this.micDeviceSelectElement.replaceChildren();
+    const defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = "Browser default";
+    this.micDeviceSelectElement.append(defaultOption);
+
+    for (const device of devices) {
+      const option = document.createElement("option");
+      option.value = device.deviceId;
+      option.textContent = device.label;
+      this.micDeviceSelectElement.append(option);
+    }
+
+    this.micDeviceSelectElement.value = currentSelectedDeviceId;
+  }
+
+  setMicLevel(level: number): void {
+    this.micLevelElement.textContent = `level ${level.toFixed(3)}`;
+    this.micLevelElement.classList.toggle("has-signal", level > 0.012);
+  }
+
+  hideActionConfirmation(): void {
+    this.confirmElement.classList.remove("is-visible");
+  }
+
+  private createConfirmElement(): HTMLElement {
+    const confirmElement = document.createElement("div");
+    confirmElement.className = "clicky-confirm";
+    const textElement = document.createElement("span");
+    textElement.dataset.clickyConfirmText = "true";
+    const confirmButton = document.createElement("button");
+    confirmButton.className = "clicky-button";
+    confirmButton.type = "button";
+    confirmButton.textContent = "Run";
+    const rejectButton = document.createElement("button");
+    rejectButton.className = "clicky-button";
+    rejectButton.type = "button";
+    rejectButton.textContent = "Cancel";
+    confirmButton.addEventListener("click", () => this.handlers.onConfirmAction());
+    rejectButton.addEventListener("click", () => this.handlers.onRejectAction());
+    confirmElement.append(textElement, confirmButton, rejectButton);
+    return confirmElement;
+  }
+}
+**********************
+PowerShell transcript end
+End time: 20260528015502
+**********************

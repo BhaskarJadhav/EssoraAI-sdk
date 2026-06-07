@@ -1,0 +1,221 @@
+**********************
+PowerShell transcript start
+Start time: 20260607135231
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $logDir = Join-Path 'C:\Users\jadha\clicky.ai' 'logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $logPath = Join-Path $logDir "implement-read-sdk-core-$timestamp.log"; Start-Transcript -Path $logPath -Force | Out-Null; Write-Host "LOG_PATH=$logPath"; Get-Content .\clicky-web-sdk\src\overlay\CursorAnimator.ts -Raw; Get-Content .\clicky-web-sdk\src\overlay\CursorOverlay.ts -Raw; Get-Content .\clicky-web-sdk\src\overlay\ElementHighlighter.ts -Raw; Get-Content .\clicky-web-sdk\src\overlay\OverlayRoot.ts -Raw; Get-Content .\clicky-web-sdk\src\overlay\ResponseBubble.ts -Raw; Stop-Transcript | Out-Null
+Process ID: 29464
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+LOG_PATH=C:\Users\jadha\clicky.ai\logs\implement-read-sdk-core-20260607-135231.log
+export class CursorAnimator {
+  private static readonly guidanceVisibleDurationMs = 8000;
+  private hideTimeoutId?: number;
+
+  constructor(
+    private readonly cursorElement: HTMLElement,
+    private readonly bubbleElement: HTMLElement
+  ) {}
+
+  pointAt(x: number, y: number, label?: string): void {
+    this.showAt(x, y, label);
+    this.scheduleHide();
+  }
+
+  showAt(x: number, y: number, label?: string): void {
+    const clampedX = Math.max(16, Math.min(window.innerWidth - 16, x));
+    const clampedY = Math.max(16, Math.min(window.innerHeight - 16, y));
+
+    this.cursorElement.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0) rotate(45deg)`;
+    this.cursorElement.classList.add("is-visible");
+
+    if (label) {
+      this.bubbleElement.textContent = label;
+      this.bubbleElement.style.transform = `translate3d(${Math.min(clampedX + 22, window.innerWidth - 380)}px, ${Math.min(
+        clampedY + 18,
+        window.innerHeight - 80
+      )}px, 0)`;
+      this.bubbleElement.classList.add("is-visible");
+    }
+  }
+
+  hide(): void {
+    window.clearTimeout(this.hideTimeoutId);
+    this.cursorElement.classList.remove("is-visible");
+    this.bubbleElement.classList.remove("is-visible");
+  }
+
+  scheduleHide(): void {
+    window.clearTimeout(this.hideTimeoutId);
+    this.hideTimeoutId = window.setTimeout(() => this.hide(), CursorAnimator.guidanceVisibleDurationMs);
+  }
+}
+import type { ClickyPointCommand } from "../core/types";
+import { ElementRegistry } from "../context/ElementRegistry";
+import { CursorAnimator } from "./CursorAnimator";
+import { ElementHighlighter } from "./ElementHighlighter";
+
+export class CursorOverlay {
+  private readonly animator: CursorAnimator;
+  private readonly highlighter: ElementHighlighter;
+  private targetLockAnimationFrame?: number;
+  private targetLockEndAt = 0;
+
+  constructor(
+    private readonly rootElement: HTMLElement,
+    private readonly elementRegistry: ElementRegistry
+  ) {
+    const cursorElement = document.createElement("div");
+    cursorElement.className = "clicky-cursor";
+    const bubbleElement = document.createElement("div");
+    bubbleElement.className = "clicky-response-bubble";
+    this.rootElement.append(cursorElement, bubbleElement);
+    this.animator = new CursorAnimator(cursorElement, bubbleElement);
+    this.highlighter = new ElementHighlighter(rootElement);
+  }
+
+  point(command: ClickyPointCommand): boolean {
+    if (command.type === "none") {
+      return false;
+    }
+
+    if (command.type === "coordinate") {
+      this.animator.pointAt(command.x, command.y, command.label);
+      return true;
+    }
+
+    const targetElement = this.elementRegistry.getElementById(command.elementId);
+    if (!targetElement) {
+      return false;
+    }
+
+    this.pointAtElement(targetElement, command.label);
+    return true;
+  }
+
+  pointAtElement(targetElement: Element, label?: string): void {
+    this.lockToElement(targetElement, label);
+  }
+
+  destroy(): void {
+    this.stopTargetLock();
+    this.highlighter.destroy();
+  }
+
+  private lockToElement(targetElement: Element, label?: string): void {
+    this.stopTargetLock();
+    this.targetLockEndAt = performance.now() + 8000;
+
+    const updateTargetLock = () => {
+      if (!targetElement.isConnected || performance.now() > this.targetLockEndAt) {
+        this.highlighter.clear();
+        this.animator.scheduleHide();
+        this.targetLockAnimationFrame = undefined;
+        return;
+      }
+
+      const rect = targetElement.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0 || rect.bottom < 0 || rect.right < 0 || rect.top > window.innerHeight || rect.left > window.innerWidth) {
+        this.highlighter.clear();
+      } else {
+        this.highlighter.show(rect);
+        this.animator.showAt(rect.left + rect.width / 2, rect.top + rect.height / 2, label);
+      }
+
+      this.targetLockAnimationFrame = window.requestAnimationFrame(updateTargetLock);
+    };
+
+    updateTargetLock();
+  }
+
+  private stopTargetLock(): void {
+    if (this.targetLockAnimationFrame !== undefined) {
+      window.cancelAnimationFrame(this.targetLockAnimationFrame);
+      this.targetLockAnimationFrame = undefined;
+    }
+  }
+}
+export class ElementHighlighter {
+  private readonly highlightElement: HTMLElement;
+  private readonly pulseElement: HTMLElement;
+
+  constructor(private readonly rootElement: HTMLElement) {
+    this.highlightElement = document.createElement("div");
+    this.highlightElement.className = "clicky-element-highlight";
+    this.pulseElement = document.createElement("div");
+    this.pulseElement.className = "clicky-element-pulse";
+    this.rootElement.append(this.highlightElement, this.pulseElement);
+  }
+
+  show(rect: DOMRect): void {
+    this.applyRect(this.highlightElement, rect, 0);
+    this.applyRect(this.pulseElement, rect, 6);
+    this.highlightElement.classList.add("is-visible");
+    this.pulseElement.classList.add("is-visible");
+  }
+
+  clear(): void {
+    this.highlightElement.classList.remove("is-visible");
+    this.pulseElement.classList.remove("is-visible");
+  }
+
+  destroy(): void {
+    this.highlightElement.remove();
+    this.pulseElement.remove();
+  }
+
+  private applyRect(element: HTMLElement, rect: DOMRect, outset: number): void {
+    element.style.transform = `translate3d(${Math.round(rect.left - outset)}px, ${Math.round(rect.top - outset)}px, 0)`;
+    element.style.width = `${Math.round(rect.width + outset * 2)}px`;
+    element.style.height = `${Math.round(rect.height + outset * 2)}px`;
+    element.style.borderRadius = `${Math.min(12, Math.max(6, Math.round(Math.min(rect.width, rect.height) / 8)))}px`;
+  }
+}
+import type { NormalizedClickyOptions } from "../core/types";
+import { ElementRegistry } from "../context/ElementRegistry";
+import { createShadowRootMount, type ShadowRootMount } from "../shared/ShadowDom";
+import { CursorOverlay } from "./CursorOverlay";
+import { createOverlayStyles } from "./overlayStyles";
+
+export class OverlayRoot {
+  private readonly mount: ShadowRootMount;
+  readonly cursorOverlay: CursorOverlay;
+
+  constructor(
+    options: NormalizedClickyOptions,
+    elementRegistry: ElementRegistry
+  ) {
+    this.mount = createShadowRootMount(options.mountElement, "clicky-overlay-host");
+    const styleElement = document.createElement("style");
+    styleElement.textContent = createOverlayStyles(options);
+    const overlayElement = document.createElement("div");
+    overlayElement.className = "clicky-overlay";
+    this.mount.shadowRoot.append(styleElement, overlayElement);
+    this.cursorOverlay = new CursorOverlay(overlayElement, elementRegistry);
+  }
+
+  destroy(): void {
+    this.cursorOverlay.destroy();
+    this.mount.hostElement.remove();
+  }
+}
+export function createResponseBubble(): HTMLElement {
+  const bubbleElement = document.createElement("div");
+  bubbleElement.className = "clicky-response-bubble";
+  return bubbleElement;
+}
+**********************
+PowerShell transcript end
+End time: 20260607135232
+**********************

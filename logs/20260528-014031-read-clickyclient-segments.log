@@ -1,0 +1,213 @@
+**********************
+PowerShell transcript start
+Start time: 20260528014031
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$logPath = Join-Path 'C:\Users\jadha\clicky.ai\logs' "$timestamp-read-clickyclient-segments.log"
+Start-Transcript -Path $logPath -Force | Out-Null
+Get-Content -Path src\core\ClickyClient.ts | Select-Object -First 125
+Get-Content -Path src\core\ClickyClient.ts | Select-Object -Skip 720 -First 70
+Stop-Transcript | Out-Null
+Get-Content $logPath
+Process ID: 19816
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+import { ActionPlanner } from "../actions/ActionPlanner";
+import { ActionRegistry } from "../actions/ActionRegistry";
+import { AssemblyAIClient } from "../api/AssemblyAIClient";
+import { ClaudeClient } from "../api/ClaudeClient";
+import { ElevenLabsClient } from "../api/ElevenLabsClient";
+import { HealthClient } from "../api/HealthClient";
+import { MemoryClient } from "../api/MemoryClient";
+import { SpeechUploadClient } from "../api/SpeechUploadClient";
+import { TelemetryClient } from "../api/TelemetryClient";
+import { WorkerProxy } from "../api/WorkerProxy";
+import { AudioPlayer } from "../audio/AudioPlayer";
+import { MicCapture } from "../audio/MicCapture";
+import { encodePcm16FramesToWavBase64 } from "../audio/WavEncoder";
+import { ContextCollector } from "../context/ContextCollector";
+import { ElementRegistry } from "../context/ElementRegistry";
+import { SemanticMapObserver } from "../context/SemanticMapObserver";
+import { OverlayRoot } from "../overlay/OverlayRoot";
+import { PanelRoot } from "../panel/PanelRoot";
+import { cleanAssistantResponse } from "../parsing/ResponseCleaner";
+import { EventBus } from "./EventBus";
+import { Lifecycle } from "./Lifecycle";
+import { LocalGuidanceEngine } from "./LocalGuidanceEngine";
+import { StateMachine } from "./StateMachine";
+import { normalizeOptions } from "./Config";
+import { Logger } from "../utils/logger";
+import type {
+  ClickyActionDefinition,
+  ClickyCapturedContext,
+  ClickyClientPublic,
+  ClickyConversationMessage,
+  ClickyDiagnostics,
+  ClickyEventHandler,
+  ClickyEventName,
+  ClickyHealthReport,
+  ClickyOptions,
+  ClickyPointCommand,
+  ClickySemanticProvider,
+  ClickyTaskOptions,
+  NormalizedClickyOptions
+} from "./types";
+
+export class ClickyClient implements ClickyClientPublic {
+  private readonly options: NormalizedClickyOptions;
+  private readonly eventBus = new EventBus();
+  private readonly stateMachine: StateMachine;
+  private readonly lifecycle = new Lifecycle();
+  private readonly elementRegistry = new ElementRegistry();
+  private readonly contextCollector: ContextCollector;
+  private readonly workerProxy: WorkerProxy;
+  private readonly healthClient: HealthClient;
+  private readonly claudeClient: ClaudeClient;
+  private readonly assemblyAIClient: AssemblyAIClient;
+  private readonly audioPlayer = new AudioPlayer();
+  private readonly elevenLabsClient: ElevenLabsClient;
+  private readonly speechUploadClient: SpeechUploadClient;
+  private readonly memoryClient: MemoryClient;
+  private readonly telemetryClient: TelemetryClient;
+  private readonly actionRegistry = new ActionRegistry();
+  private readonly actionPlanner: ActionPlanner;
+  private readonly localGuidanceEngine = new LocalGuidanceEngine();
+  private readonly micCapture = new MicCapture();
+  private readonly semanticMapObserver: SemanticMapObserver;
+  private readonly semanticProviders: ClickySemanticProvider[] = [];
+  private readonly panelRoot: PanelRoot;
+  private readonly overlayRoot: OverlayRoot;
+  private readonly conversationHistory: ClickyConversationMessage[] = [];
+  private readonly logger = new Logger("ClickyVoice", "info");
+  private isProcessingTranscript = false;
+  private latestTranscript = "";
+  private activeTaskId?: string;
+  private latestHealth?: ClickyHealthReport;
+  private lastError?: string;
+  private lastLatencyMs?: number;
+  private lastTarget?: ClickyPointCommand;
+  private readonly degradedProviders: Record<string, string> = {};
+  private taskStartedAt?: number;
+  private micStartedAt?: number;
+  private firstAudioFrameAt?: number;
+  private audioFrameCount = 0;
+  private partialTranscriptCount = 0;
+  private recordedSampleRate = 16000;
+  private readonly recordedPcm16Frames: Int16Array[] = [];
+  private readonly queuedPcm16FramesForStt: Int16Array[] = [];
+  private activeVoiceSessionId?: string;
+  private isStreamingSttReady = false;
+  private audioLevelTotal = 0;
+  private audioLevelPeak = 0;
+  private voiceLikeAudioFrameCount = 0;
+
+  constructor(rawOptions: ClickyOptions) {
+    this.options = normalizeOptions(rawOptions);
+    this.stateMachine = new StateMachine(this.eventBus);
+    this.contextCollector = new ContextCollector(this.options, this.elementRegistry);
+    this.workerProxy = new WorkerProxy(this.options.workerBaseUrl);
+    this.healthClient = new HealthClient(this.workerProxy, this.options);
+    this.claudeClient = new ClaudeClient(this.workerProxy, this.options);
+    this.assemblyAIClient = new AssemblyAIClient(this.workerProxy, this.eventBus, this.options);
+    this.elevenLabsClient = new ElevenLabsClient(this.workerProxy, this.audioPlayer, this.eventBus, this.options);
+    this.speechUploadClient = new SpeechUploadClient(this.workerProxy, this.options);
+    this.memoryClient = new MemoryClient(this.workerProxy, this.options);
+    this.telemetryClient = new TelemetryClient(this.workerProxy, this.options);
+    this.actionPlanner = new ActionPlanner(this.options, this.actionRegistry, this.elementRegistry, this.eventBus);
+    this.semanticMapObserver = new SemanticMapObserver(() => void this.handleDomChanged());
+    this.overlayRoot = new OverlayRoot(this.options, this.elementRegistry);
+    this.panelRoot = new PanelRoot(this.options, this.eventBus, {
+      onSendText: (text) => void this.sendUserText(text),
+      onStartTalk: () => void this.startTask({ inputMode: "voice" }),
+      onStopTalk: () => void this.stopPushToTalk(),
+      onConfirmAction: () => void this.confirmPendingAction(),
+      onRejectAction: () => this.rejectPendingAction()
+    });
+
+    this.installHotkeyListeners();
+    this.installInternalEventHandlers();
+    this.lifecycle.add(() => this.panelRoot.destroy());
+    this.lifecycle.add(() => this.overlayRoot.destroy());
+    this.lifecycle.add(() => this.eventBus.clear());
+    this.lifecycle.add(() => this.assemblyAIClient.close());
+    this.lifecycle.add(() => this.micCapture.stop());
+    this.lifecycle.add(() => this.audioPlayer.destroy());
+    void this.bootstrapRuntime();
+  }
+
+  open(): void {
+    this.panelRoot.open();
+      target.getAttribute("role") === "textbox"
+    );
+  }
+
+  private trimConversationHistory(): void {
+    const maximumMessages = 16;
+    if (this.conversationHistory.length > maximumMessages) {
+      this.conversationHistory.splice(0, this.conversationHistory.length - maximumMessages);
+    }
+  }
+
+  private handleError(error: unknown): void {
+    const normalizedError = error instanceof Error ? error : new Error(String(error));
+    this.lastError = normalizedError.message;
+    this.logStage("error", { message: normalizedError.message });
+    this.eventBus.emit("error", { error: normalizedError });
+    this.panelRoot.companionPanel.appendMessage("assistant", normalizedError.message);
+    try {
+      this.stateMachine.setState("error");
+      this.stateMachine.setState("idle");
+    } catch {
+      // If an error occurs during another recovery transition, keep the UI usable.
+    }
+    this.isProcessingTranscript = false;
+  }
+
+  private handleVoiceCaptureError(error: unknown): void {
+    const normalizedError = error instanceof DOMException ? error : error instanceof Error ? error : new Error(String(error));
+    const isPermissionDenied =
+      normalizedError instanceof DOMException &&
+      (normalizedError.name === "NotAllowedError" || normalizedError.name === "SecurityError");
+    const message = isPermissionDenied
+      ? "Microphone permission is blocked for this page. Click the site icon in the address bar, allow Microphone for 127.0.0.1, then reload the demo."
+      : normalizedError.message;
+
+    this.lastError = message;
+    this.logStage("voice.capture.error", { message, name: normalizedError.name });
+    this.eventBus.emit("error", { error: new Error(message) });
+    this.panelRoot.companionPanel.appendMessage("assistant", message);
+    this.micCapture.stop();
+    this.activeVoiceSessionId = undefined;
+    this.isStreamingSttReady = false;
+    this.stateMachine.setState("idle");
+    this.endTask("error");
+  }
+
+  private logStage(stage: string, details: Record<string, unknown> = {}): void {
+    const timestamp = new Date().toISOString();
+    const sinceTaskMs = this.taskStartedAt
+      ? Math.round(performance.now() - this.taskStartedAt)
+      : undefined;
+    this.logger.info(stage, {
+      timestamp,
+      sinceTaskMs,
+      ...details
+    });
+  }
+}
+**********************
+PowerShell transcript end
+End time: 20260528014031
+**********************

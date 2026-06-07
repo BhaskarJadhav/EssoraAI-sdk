@@ -1,0 +1,1000 @@
+import { ActionPlanner } from "../actions/ActionPlanner";
+import { ActionRegistry } from "../actions/ActionRegistry";
+import { AssemblyAIClient } from "../api/AssemblyAIClient";
+import { ClaudeClient } from "../api/ClaudeClient";
+import { ElevenLabsClient } from "../api/ElevenLabsClient";
+import { HealthClient } from "../api/HealthClient";
+import { MemoryClient } from "../api/MemoryClient";
+import { ProviderManager } from "../api/providers/ProviderManager";
+import { SpeechUploadClient } from "../api/SpeechUploadClient";
+import { TelemetryClient } from "../api/TelemetryClient";
+import { WorkerProxy } from "../api/WorkerProxy";
+import { AudioPlayer } from "../audio/AudioPlayer";
+import { MicCapture } from "../audio/MicCapture";
+import { encodePcm16FramesToWavBase64 } from "../audio/WavEncoder";
+import { ContextCollector } from "../context/ContextCollector";
+import { ElementRegistry } from "../context/ElementRegistry";
+import { ScreenshotCapture } from "../context/ScreenshotCapture";
+import { SemanticMapObserver } from "../context/SemanticMapObserver";
+import { OverlayRoot } from "../overlay/OverlayRoot";
+import { PanelRoot } from "../panel/PanelRoot";
+import type { OnboardingCheckName } from "../panel/OnboardingPanel";
+import { cleanAssistantResponse } from "../parsing/ResponseCleaner";
+import { EventBus } from "./EventBus";
+import { GuideModeRuntime } from "./GuideModeRuntime";
+import { Lifecycle } from "./Lifecycle";
+import { LocalGuidanceEngine } from "./LocalGuidanceEngine";
+import { StateMachine } from "./StateMachine";
+import { normalizeOptions, persistRuntimeSettings } from "./Config";
+import { Logger } from "../utils/logger";
+import type {
+  ClickyActionDefinition,
+  ClickyCapturedContext,
+  ClickyScreenshot,
+  ClickyClientPublic,
+  ClickyConversationMessage,
+  ClickyDiagnostics,
+  ClickyEventHandler,
+  ClickyEventName,
+  ClickyHealthReport,
+  ClickyOptions,
+  ClickyPointCommand,
+  ClickyRuntimeSettings,
+  ClickySemanticProvider,
+  ClickyTaskOptions,
+  NormalizedClickyOptions
+} from "./types";
+
+export class ClickyClient implements ClickyClientPublic {
+  private readonly options: NormalizedClickyOptions;
+  private readonly eventBus = new EventBus();
+  private readonly stateMachine: StateMachine;
+  private readonly lifecycle = new Lifecycle();
+  private readonly elementRegistry = new ElementRegistry();
+  private readonly contextCollector: ContextCollector;
+  private readonly workerProxy: WorkerProxy;
+  private readonly healthClient: HealthClient;
+  private readonly claudeClient: ClaudeClient;
+  private readonly assemblyAIClient: AssemblyAIClient;
+  private readonly audioPlayer = new AudioPlayer();
+  private readonly elevenLabsClient: ElevenLabsClient;
+  private readonly speechUploadClient: SpeechUploadClient;
+  private readonly memoryClient: MemoryClient;
+  private readonly providerManager: ProviderManager;
+  private readonly telemetryClient: TelemetryClient;
+  private readonly actionRegistry = new ActionRegistry();
+  private readonly actionPlanner: ActionPlanner;
+  private readonly guideModeRuntime: GuideModeRuntime;
+  private readonly localGuidanceEngine = new LocalGuidanceEngine();
+  private readonly micCapture = new MicCapture();
+  private readonly screenshotCapture = new ScreenshotCapture();
+  private readonly semanticMapObserver: SemanticMapObserver;
+  private readonly semanticProviders: ClickySemanticProvider[] = [];
+  private readonly panelRoot: PanelRoot;
+  private readonly overlayRoot: OverlayRoot;
+  private readonly conversationHistory: ClickyConversationMessage[] = [];
+  private readonly logger = new Logger("ClickyVoice", "info");
+  private isProcessingTranscript = false;
+  private latestTranscript = "";
+  private activeTaskId?: string;
+  private latestHealth?: ClickyHealthReport;
+  private lastError?: string;
+  private lastLatencyMs?: number;
+  private lastTarget?: ClickyPointCommand;
+  private readonly degradedProviders: Record<string, string> = {};
+  private pendingScreenshot?: ClickyScreenshot;
+  private taskStartedAt?: number;
+  private micStartedAt?: number;
+  private firstAudioFrameAt?: number;
+  private audioFrameCount = 0;
+  private partialTranscriptCount = 0;
+  private recordedSampleRate = 16000;
+  private readonly recordedPcm16Frames: Int16Array[] = [];
+  private readonly queuedPcm16FramesForStt: Int16Array[] = [];
+  private activeVoiceSessionId?: string;
+  private isStreamingSttReady = false;
+  private audioLevelTotal = 0;
+  private audioLevelPeak = 0;
+  private voiceLikeAudioFrameCount = 0;
+  private silentAudioStartedAt?: number;
+
+  constructor(rawOptions: ClickyOptions) {
+    this.options = normalizeOptions(rawOptions);
+    this.stateMachine = new StateMachine(this.eventBus);
+    this.contextCollector = new ContextCollector(this.options, this.elementRegistry);
+    this.workerProxy = new WorkerProxy(this.options.workerBaseUrl);
+    this.healthClient = new HealthClient(this.workerProxy, this.options);
+    this.claudeClient = new ClaudeClient(this.workerProxy, this.options);
+    this.assemblyAIClient = new AssemblyAIClient(this.workerProxy, this.eventBus, this.options);
+    this.elevenLabsClient = new ElevenLabsClient(this.workerProxy, this.audioPlayer, this.eventBus, this.options);
+    this.speechUploadClient = new SpeechUploadClient(this.workerProxy, this.options);
+    this.memoryClient = new MemoryClient(this.workerProxy, this.options);
+    this.providerManager = new ProviderManager(this.options);
+    this.telemetryClient = new TelemetryClient(this.workerProxy, this.options);
+    this.actionPlanner = new ActionPlanner(this.options, this.actionRegistry, this.elementRegistry, this.eventBus);
+    this.assemblyAIClient.onProviderChanged((provider) => this.setActiveProvider("stt-realtime", provider, "streaming websocket connected"));
+    this.semanticMapObserver = new SemanticMapObserver(() => void this.handleDomChanged());
+    this.overlayRoot = new OverlayRoot(this.options, this.elementRegistry, (reason) => this.handleTargetLost(reason));
+    this.guideModeRuntime = new GuideModeRuntime({
+      claudeClient: this.claudeClient,
+      elevenLabsClient: this.elevenLabsClient,
+      overlayRoot: this.overlayRoot,
+      stateMachine: this.stateMachine,
+      eventBus: this.eventBus,
+      captureContext: () => this.captureContextForRequest(),
+      appendAssistantMessage: (text) => this.panelRoot.companionPanel.appendMessage("assistant", text),
+      shouldSpeak: () => this.options.enableTTS
+    });
+    this.panelRoot = new PanelRoot(this.options, this.eventBus, {
+      onSendText: (text) => void this.sendUserText(text),
+      onStartTalk: () => void this.startTask({ inputMode: "voice" }),
+      onStopTalk: () => void this.stopPushToTalk(),
+      onConfirmAction: () => void this.confirmPendingAction(),
+      onRejectAction: () => this.rejectPendingAction(),
+      onUpdateSettings: (settings) => this.updateSettings(settings),
+      onRunOnboardingChecks: () => void this.runOnboardingChecks(),
+      onDismissOnboarding: () => this.dismissOnboarding(),
+      onCaptureScreenshot: () => void this.captureScreenshotForNextRequest()
+    });
+
+    this.installHotkeyListeners();
+    this.installInternalEventHandlers();
+    this.lifecycle.add(() => this.panelRoot.destroy());
+    this.lifecycle.add(() => this.overlayRoot.destroy());
+    this.lifecycle.add(() => this.eventBus.clear());
+    this.lifecycle.add(() => this.assemblyAIClient.close());
+    this.lifecycle.add(() => this.micCapture.stop());
+    this.lifecycle.add(() => this.audioPlayer.destroy());
+    void this.bootstrapRuntime();
+  }
+
+  open(): void {
+    this.panelRoot.open();
+  }
+
+  close(): void {
+    this.panelRoot.close();
+  }
+
+  showOnboarding(): void {
+    this.panelRoot.companionPanel.onboardingPanel.show();
+    this.open();
+  }
+
+  async destroy(): Promise<void> {
+    await this.lifecycle.destroy();
+  }
+
+  async startPushToTalk(): Promise<void> {
+    if (!this.options.enableVoice || this.stateMachine.getState() !== "idle") {
+      return;
+    }
+
+    try {
+      const voiceSessionId = crypto.randomUUID();
+      this.activeVoiceSessionId = voiceSessionId;
+      this.isStreamingSttReady = false;
+      this.latestTranscript = "";
+      this.stateMachine.setState("listening");
+      this.eventBus.emit("mic:start", undefined);
+      this.micStartedAt = performance.now();
+      this.firstAudioFrameAt = undefined;
+      this.audioFrameCount = 0;
+      this.partialTranscriptCount = 0;
+      this.audioLevelTotal = 0;
+      this.audioLevelPeak = 0;
+      this.voiceLikeAudioFrameCount = 0;
+      this.silentAudioStartedAt = undefined;
+      this.recordedPcm16Frames.splice(0);
+      this.queuedPcm16FramesForStt.splice(0);
+      this.logStage("mic.permission.requested");
+      this.micCapture.onAudioFrame((pcm16Frame) => this.handleMicAudioFrame(voiceSessionId, pcm16Frame));
+      const sampleRate = await this.micCapture.start();
+      this.recordedSampleRate = sampleRate;
+      this.logStage("mic.capture.started", { sampleRate });
+      await this.assemblyAIClient.connect(sampleRate);
+      if (this.activeVoiceSessionId !== voiceSessionId || this.stateMachine.getState() !== "listening") {
+        this.assemblyAIClient.close();
+        return;
+      }
+      this.isStreamingSttReady = true;
+      this.flushQueuedAudioFramesToStreamingStt();
+      this.logStage("stt.websocket.connected", {
+        latencyMs: this.micStartedAt ? Math.round(performance.now() - this.micStartedAt) : undefined,
+        queuedFramesFlushed: this.queuedPcm16FramesForStt.length
+      });
+    } catch (error) {
+      if (this.stateMachine.getState() === "listening") {
+        this.handleVoiceCaptureError(error);
+      } else {
+        this.logStage("stt.connect.cancelled", { message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  }
+
+  async stopPushToTalk(): Promise<void> {
+    if (this.stateMachine.getState() !== "listening") {
+      return;
+    }
+
+    this.stateMachine.setState("transcribing");
+    this.micCapture.stop();
+    this.activeVoiceSessionId = undefined;
+    this.isStreamingSttReady = false;
+    this.eventBus.emit("mic:stop", undefined);
+    this.logStage("mic.capture.stopped", {
+      frames: this.audioFrameCount,
+      averageLevel: this.getAverageAudioLevel(),
+      peakLevel: this.audioLevelPeak,
+      voiceLikeFrames: this.voiceLikeAudioFrameCount
+    });
+    await this.assemblyAIClient.finishTurn();
+
+    if (!this.latestTranscript) {
+      await this.transcribeRecordedAudioFallback();
+    }
+
+    if (this.latestTranscript && !this.isProcessingTranscript) {
+      await this.processUserText(this.latestTranscript);
+    } else if (this.stateMachine.getState() === "transcribing") {
+      this.stateMachine.setState("idle");
+      this.endTask("error");
+      this.panelRoot.companionPanel.appendMessage(
+        "assistant",
+        this.createEmptyTranscriptionMessage()
+      );
+    }
+  }
+
+  private handleMicAudioFrame(voiceSessionId: string, pcm16Frame: Int16Array): void {
+    if (this.activeVoiceSessionId !== voiceSessionId) {
+      return;
+    }
+
+    if (!this.firstAudioFrameAt) {
+      this.firstAudioFrameAt = performance.now();
+      this.logStage("mic.audio.first_frame", {
+        latencyMs: this.micStartedAt ? Math.round(this.firstAudioFrameAt - this.micStartedAt) : undefined
+      });
+    }
+
+    this.audioFrameCount += 1;
+    const copiedPcm16Frame = pcm16Frame.slice();
+    const audioLevel = this.calculatePcm16Level(copiedPcm16Frame);
+    this.audioLevelTotal += audioLevel;
+    this.audioLevelPeak = Math.max(this.audioLevelPeak, audioLevel);
+    if (audioLevel > 0.012) {
+      this.voiceLikeAudioFrameCount += 1;
+      this.silentAudioStartedAt = undefined;
+    } else if (!this.silentAudioStartedAt) {
+      this.silentAudioStartedAt = performance.now();
+    }
+    this.eventBus.emit("mic:level", { level: Math.min(1, audioLevel * 12) });
+    if (this.silentAudioStartedAt && performance.now() - this.silentAudioStartedAt > 3000) {
+      this.eventBus.emit("mic:silent", { durationMs: Math.round(performance.now() - this.silentAudioStartedAt) });
+      this.silentAudioStartedAt = performance.now();
+    }
+    this.recordedPcm16Frames.push(copiedPcm16Frame);
+
+    if (this.audioFrameCount === 1 || this.audioFrameCount % 20 === 0) {
+      this.logStage("mic.audio.frame_count", {
+        count: this.audioFrameCount,
+        level: audioLevel,
+        peakLevel: this.audioLevelPeak
+      });
+    }
+
+    if (this.isStreamingSttReady) {
+      this.assemblyAIClient.sendAudioFrame(copiedPcm16Frame);
+      return;
+    }
+
+    this.queuedPcm16FramesForStt.push(copiedPcm16Frame);
+  }
+
+  private flushQueuedAudioFramesToStreamingStt(): void {
+    const queuedFrameCount = this.queuedPcm16FramesForStt.length;
+    for (const queuedPcm16Frame of this.queuedPcm16FramesForStt) {
+      this.assemblyAIClient.sendAudioFrame(queuedPcm16Frame);
+    }
+    this.queuedPcm16FramesForStt.splice(0);
+    this.logStage("stt.audio.queue_flushed", { frames: queuedFrameCount });
+  }
+
+  private calculatePcm16Level(pcm16Frame: Int16Array): number {
+    if (pcm16Frame.length === 0) {
+      return 0;
+    }
+
+    let totalSquaredSampleValue = 0;
+    for (const pcm16Sample of pcm16Frame) {
+      const normalizedSample = pcm16Sample / 32768;
+      totalSquaredSampleValue += normalizedSample * normalizedSample;
+    }
+
+    return Number(Math.sqrt(totalSquaredSampleValue / pcm16Frame.length).toFixed(4));
+  }
+
+  private getAverageAudioLevel(): number {
+    if (this.audioFrameCount === 0) {
+      return 0;
+    }
+
+    return Number((this.audioLevelTotal / this.audioFrameCount).toFixed(4));
+  }
+
+  private createEmptyTranscriptionMessage(): string {
+    if (this.audioLevelPeak < 0.006 || this.voiceLikeAudioFrameCount === 0) {
+      return "The microphone opened, but the captured audio looks silent. Check the Windows input device and Chrome microphone source, then speak while holding the Mic button.";
+    }
+
+    return "I received non-silent microphone audio, but speech transcription still returned empty text. Try once more; if this repeats, we need to inspect the captured WAV.";
+  }
+
+  async sendUserText(text: string): Promise<void> {
+    await this.startTask({ inputMode: "text", initialText: text });
+  }
+
+  async healthCheck(): Promise<ClickyHealthReport> {
+    const health = await this.healthClient.check();
+    this.latestHealth = health;
+    this.eventBus.emit("health:changed", { health });
+    if (!health.ok) {
+      this.markProviderDegraded("worker", health.error ?? "health check failed");
+    } else {
+      this.markProviderRecovered("worker");
+    }
+    return health;
+  }
+
+  async startTask(options: ClickyTaskOptions): Promise<void> {
+    if (this.activeTaskId) {
+      this.endTask("cancelled");
+    }
+
+    this.activeTaskId = crypto.randomUUID();
+    this.taskStartedAt = performance.now();
+    if (this.options.transientMode) {
+      this.overlayRoot.cursorOverlay.showTransient();
+    }
+    this.logStage("task.started", { inputMode: options.inputMode });
+    this.semanticMapObserver.start();
+    this.eventBus.emit("task:started", { taskId: this.activeTaskId, inputMode: options.inputMode });
+    void this.captureTelemetry("task_started", { inputMode: options.inputMode, taskId: this.activeTaskId });
+
+    if (options.inputMode === "voice") {
+      await this.startPushToTalk();
+      return;
+    }
+
+    if (options.initialText) {
+      await this.processUserText(options.initialText);
+    }
+  }
+
+  async startGuide(goal: string): Promise<void> {
+    const normalizedGoal = goal.trim();
+    if (!normalizedGoal || this.stateMachine.getState() !== "idle") {
+      return;
+    }
+
+    try {
+      await this.guideModeRuntime.start(normalizedGoal);
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  stepCompleted(): void {
+    this.guideModeRuntime.stepCompleted();
+  }
+
+  cancelGuide(): void {
+    this.guideModeRuntime.cancel();
+    if (this.stateMachine.getState().startsWith("guide-")) {
+      this.stateMachine.setState("idle");
+    }
+  }
+
+  updateSettings(settings: ClickyRuntimeSettings): void {
+    if (settings.model) {
+      this.options.model = settings.model;
+    }
+    if (settings.voiceProvider) {
+      this.options.voiceProvider = settings.voiceProvider;
+      this.setActiveProvider("stt-primary", settings.voiceProvider === "google" ? "google-stt-upload" : settings.voiceProvider, "user selected provider");
+    }
+    if (settings.ttsProvider) {
+      this.options.ttsProvider = settings.ttsProvider;
+      this.setActiveProvider("tts", settings.ttsProvider === "google" ? "google-tts-zephyr" : settings.ttsProvider, "user selected provider");
+    }
+    if (settings.ttsVoice) {
+      this.options.ttsVoice = settings.ttsVoice;
+      this.setActiveProvider("tts", this.options.ttsProvider === "google" ? `google-tts-${settings.ttsVoice}` : "elevenlabs", "user selected voice");
+    }
+    persistRuntimeSettings({
+      model: this.options.model,
+      voiceProvider: this.options.voiceProvider,
+      ttsProvider: this.options.ttsProvider,
+      ttsVoice: this.options.ttsVoice
+    });
+    this.panelRoot.companionPanel.setSettings({
+      model: this.options.model,
+      voiceProvider: this.options.voiceProvider,
+      ttsProvider: this.options.ttsProvider,
+      ttsVoice: this.options.ttsVoice
+    });
+  }
+
+  async runOnboardingChecks(): Promise<void> {
+    await this.runOnboardingCheck("microphone", async () => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("not supported");
+      }
+      if ("permissions" in navigator && navigator.permissions?.query) {
+        const permissionStatus = await navigator.permissions.query({ name: "microphone" as PermissionName });
+        if (permissionStatus.state === "denied") {
+          throw new Error("denied");
+        }
+      }
+    });
+    await this.runOnboardingCheck("worker", async () => {
+      const health = await this.healthCheck();
+      if (!health.ok) {
+        throw new Error(health.error ?? "failed");
+      }
+    });
+    await this.runOnboardingCheck("ai", async () => {
+      const context = await this.contextCollector.capture();
+      await this.claudeClient.planGuide("find the search bar", context);
+    });
+    await this.runOnboardingCheck("tts", async () => {
+      if (this.options.enableTTS) {
+        await this.elevenLabsClient.speak("ready");
+      }
+    });
+    this.panelRoot.companionPanel.appendMessage("assistant", "ready. try saying: help me find the search bar.");
+  }
+
+  dismissOnboarding(): void {
+    try {
+      window.localStorage.setItem("clicky-sdk-onboarded", "true");
+    } catch {
+      // Storage can be unavailable in embedded contexts.
+    }
+    this.panelRoot.companionPanel.onboardingPanel.hide();
+  }
+
+  async captureScreenshotForNextRequest(): Promise<void> {
+    if (this.options.screenshotMode === "off") {
+      this.panelRoot.companionPanel.appendMessage("assistant", "screenshot mode is off for this app.");
+      return;
+    }
+
+    try {
+      this.pendingScreenshot = await this.screenshotCapture.captureStill();
+      this.panelRoot.companionPanel.showScreenshotPreview(this.pendingScreenshot.width, this.pendingScreenshot.height);
+      this.eventBus.emit("screenshot:captured", { screenshot: this.pendingScreenshot });
+    } catch (error) {
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      this.panelRoot.companionPanel.appendMessage(
+        "assistant",
+        `screenshot capture was not attached: ${normalizedError.message}`
+      );
+      this.eventBus.emit("screenshot:denied", { error: normalizedError });
+    }
+  }
+
+  endTask(reason: "completed" | "cancelled" | "error" = "completed"): void {
+    if (!this.activeTaskId) {
+      return;
+    }
+
+    const taskId = this.activeTaskId;
+    this.activeTaskId = undefined;
+    this.semanticMapObserver.stop();
+    this.eventBus.emit("task:ended", { taskId, reason });
+    void this.captureTelemetry("task_ended", { taskId, reason });
+  }
+
+  getDiagnostics(): ClickyDiagnostics {
+    return {
+      state: this.stateMachine.getState(),
+      health: this.latestHealth,
+      activeTaskId: this.activeTaskId,
+      semanticMapVersion: this.contextCollector.getSemanticMapVersion(),
+      lastError: this.lastError,
+      lastLatencyMs: this.lastLatencyMs,
+      lastTarget: this.lastTarget,
+      degradedProviders: { ...this.degradedProviders },
+      activeProviders: this.providerManager.getActiveProviders(),
+      settings: {
+        model: this.options.model,
+        voiceProvider: this.options.voiceProvider,
+        ttsProvider: this.options.ttsProvider,
+        ttsVoice: this.options.ttsVoice
+      }
+    };
+  }
+
+  async captureContext(): Promise<ClickyCapturedContext> {
+    const context = await this.contextCollector.capture();
+    await this.applySemanticProviders(context);
+    this.eventBus.emit("context:captured", { context });
+    return context;
+  }
+
+  registerAction(actionDefinition: ClickyActionDefinition): void {
+    this.actionRegistry.registerAction(actionDefinition);
+  }
+
+  unregisterAction(actionId: string): void {
+    this.actionRegistry.unregisterAction(actionId);
+  }
+
+  registerSemanticProvider(provider: ClickySemanticProvider): void {
+    this.semanticProviders.push(provider);
+  }
+
+  on<EventName extends ClickyEventName>(eventName: EventName, handler: ClickyEventHandler<EventName>): () => void {
+    return this.eventBus.on(eventName, handler);
+  }
+
+  private async processUserText(userText: string): Promise<void> {
+    const normalizedUserText = userText.trim();
+    if (!normalizedUserText || this.isProcessingTranscript) {
+      return;
+    }
+
+    this.isProcessingTranscript = true;
+    const startedAt = performance.now();
+    this.panelRoot.companionPanel.appendMessage("user", normalizedUserText);
+
+    try {
+      this.stateMachine.setState("capturing-context");
+      const capturedContext = await this.captureContextForRequest({
+        includeScreenshot: this.options.enableScreenshots && this.options.contextMode === "screenshot-first"
+      });
+
+      this.stateMachine.setState("responding");
+      const chatStartedAt = performance.now();
+      this.logStage("chat.request.start", { length: normalizedUserText.length });
+      const rawAssistantText = await this.streamAssistantTextWithFallback(normalizedUserText, capturedContext);
+      this.logStage("chat.response.done", { latencyMs: Math.round(performance.now() - chatStartedAt) });
+
+      const cleanedResponse = cleanAssistantResponse(rawAssistantText);
+      if (cleanedResponse.pointCommand.type === "none") {
+        cleanedResponse.pointCommand = this.localGuidanceEngine.createPointCommand(normalizedUserText, capturedContext);
+      }
+      this.eventBus.emit("assistant:done", {
+        text: rawAssistantText,
+        spokenText: cleanedResponse.spokenText
+      });
+      this.eventBus.emit("overlay:point", { command: cleanedResponse.pointCommand });
+      this.lastTarget = cleanedResponse.pointCommand;
+      const didPoint = this.pointAtCommand(cleanedResponse.pointCommand, capturedContext);
+      if (didPoint) {
+        this.eventBus.emit("cursor:targeted", { command: cleanedResponse.pointCommand });
+      } else if (cleanedResponse.pointCommand.type !== "none") {
+        this.eventBus.emit("cursor:missed", { command: cleanedResponse.pointCommand, reason: "target not found" });
+      }
+
+      this.conversationHistory.push({ role: "user", text: normalizedUserText });
+      this.conversationHistory.push({ role: "assistant", text: cleanedResponse.spokenText });
+      this.trimConversationHistory();
+      await this.saveMemory();
+
+      if (this.options.enableTTS && cleanedResponse.spokenText) {
+        this.stateMachine.setState("speaking");
+        const ttsStartedAt = performance.now();
+        this.logStage("tts.request.start", { length: cleanedResponse.spokenText.length });
+        try {
+          await this.elevenLabsClient.speak(cleanedResponse.spokenText);
+          this.logStage("tts.playback.done", { latencyMs: Math.round(performance.now() - ttsStartedAt) });
+        } catch (error) {
+          this.markProviderDegraded("tts", error instanceof Error ? error.message : String(error));
+        }
+      }
+
+      await this.actionPlanner.handleProposedAction(cleanedResponse.proposedAction, capturedContext);
+      if (this.actionPlanner.hasPendingAction()) {
+        this.stateMachine.setState("awaiting-action-confirmation");
+      } else {
+        this.stateMachine.setState("idle");
+        this.endTask("completed");
+        this.scheduleTransientOverlayHide();
+      }
+      this.lastLatencyMs = Math.round(performance.now() - startedAt);
+      await this.captureTelemetry("task_turn_completed", {
+        taskId: this.activeTaskId,
+        latencyMs: this.lastLatencyMs,
+        didPoint,
+        pointType: cleanedResponse.pointCommand.type
+      });
+    } catch (error) {
+      this.endTask("error");
+      this.handleError(error);
+    } finally {
+      this.isProcessingTranscript = false;
+    }
+  }
+
+  private async confirmPendingAction(): Promise<void> {
+    try {
+      this.stateMachine.setState("executing-action");
+      await this.actionPlanner.confirmPendingAction();
+      this.stateMachine.setState("idle");
+      this.endTask("completed");
+      this.scheduleTransientOverlayHide();
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  private async streamAssistantTextWithFallback(
+    normalizedUserText: string,
+    capturedContext: ClickyCapturedContext
+  ): Promise<string> {
+    try {
+      return await this.claudeClient.streamChat({
+        userText: normalizedUserText,
+        capturedContext,
+        conversationHistory: this.conversationHistory,
+        registeredActions: this.actionRegistry.listActions().map((action) => ({
+          id: action.id,
+          name: action.name,
+          description: action.description,
+          parametersSchema: action.parametersSchema
+        })),
+        onToken: (token, fullText) => this.eventBus.emit("assistant:token", { token, fullText })
+      });
+    } catch (error) {
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      if (!this.options.enableLocalFallback) {
+        this.markProviderDegraded("chat", normalizedError.message);
+        throw normalizedError;
+      }
+      this.markProviderDegraded("chat", normalizedError.message);
+
+      const fallbackText = this.localGuidanceEngine.createFallbackResponse(
+        normalizedUserText,
+        capturedContext,
+        normalizedError
+      );
+      this.eventBus.emit("assistant:token", { token: fallbackText, fullText: fallbackText });
+      return fallbackText;
+    }
+  }
+
+  private async captureContextForRequest(options: { includeScreenshot?: boolean } = {}): Promise<ClickyCapturedContext> {
+    const capturedContext = await this.contextCollector.capture(options);
+    if (this.pendingScreenshot) {
+      capturedContext.screenshots.push(this.pendingScreenshot);
+      this.pendingScreenshot = undefined;
+      this.panelRoot.companionPanel.clearScreenshotPreview();
+    }
+    await this.applySemanticProviders(capturedContext);
+    this.eventBus.emit("context:captured", { context: capturedContext });
+    return capturedContext;
+  }
+
+  private async transcribeRecordedAudioFallback(): Promise<void> {
+    if (this.recordedPcm16Frames.length === 0) {
+      this.logStage("stt.upload.skipped_empty_audio");
+      return;
+    }
+
+    try {
+      this.logStage("stt.upload.start", { frames: this.recordedPcm16Frames.length });
+      const audioBase64 = encodePcm16FramesToWavBase64(this.recordedPcm16Frames, this.recordedSampleRate);
+      const uploadResult = await this.speechUploadClient.transcribeWavBase64(audioBase64, this.recordedSampleRate);
+      this.setActiveProvider("stt-primary", uploadResult.provider ?? "google-stt-upload", "upload transcription completed");
+      if (uploadResult.transcript) {
+        this.latestTranscript = uploadResult.transcript;
+        this.logStage("stt.upload.final", {
+          length: uploadResult.transcript.length,
+          provider: uploadResult.provider ?? "unknown"
+        });
+        this.eventBus.emit("transcript:final", { text: uploadResult.transcript });
+      } else {
+        this.logStage("stt.upload.empty_result", {
+          provider: uploadResult.provider ?? "unknown",
+          averageLevel: this.getAverageAudioLevel(),
+          peakLevel: this.audioLevelPeak,
+          voiceLikeFrames: this.voiceLikeAudioFrameCount
+        });
+      }
+    } catch (error) {
+      this.markProviderDegraded("stt-upload", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private pointAtCommand(pointCommand: ClickyPointCommand, capturedContext: ClickyCapturedContext): boolean {
+    const didPoint = this.overlayRoot.cursorOverlay.point(pointCommand);
+    if (didPoint || pointCommand.type !== "element") {
+      return didPoint;
+    }
+
+    const capturedElement = capturedContext.elements.find((element) => element.id === pointCommand.elementId);
+    if (!capturedElement) {
+      return false;
+    }
+
+    const liveElementFromSelector = this.resolveCapturedElement(capturedElement.selector);
+    if (liveElementFromSelector) {
+      this.overlayRoot.cursorOverlay.pointAtElement(
+        liveElementFromSelector,
+        pointCommand.label || capturedElement.label,
+        pointCommand.elementId
+      );
+      return true;
+    }
+
+    return this.overlayRoot.cursorOverlay.point({
+      type: "coordinate",
+      x: capturedElement.bounds.x + capturedElement.bounds.width / 2,
+      y: capturedElement.bounds.y + capturedElement.bounds.height / 2,
+      label: pointCommand.label || capturedElement.label
+    });
+  }
+
+  private resolveCapturedElement(selector: string): Element | undefined {
+    if (!selector) {
+      return undefined;
+    }
+
+    try {
+      const element = document.querySelector(selector);
+      return element ?? undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private rejectPendingAction(): void {
+    this.actionPlanner.rejectPendingAction();
+    this.panelRoot.companionPanel.hideActionConfirmation();
+    this.stateMachine.setState("idle");
+    this.endTask("cancelled");
+  }
+
+  private handleTargetLost(reason: string): void {
+    this.logStage("cursor.target_lost", { reason, lastTarget: this.lastTarget });
+    this.eventBus.emit("cursor:target-lost", { reason, lastTarget: this.lastTarget });
+  }
+
+  private scheduleTransientOverlayHide(): void {
+    if (this.options.transientMode) {
+      this.overlayRoot.cursorOverlay.scheduleHide();
+    }
+  }
+
+  private async bootstrapRuntime(): Promise<void> {
+    await this.healthCheck();
+    await this.loadMemory();
+    try {
+      if (window.localStorage.getItem("clicky-sdk-onboarded") !== "true") {
+        this.showOnboarding();
+      }
+    } catch {
+      this.showOnboarding();
+    }
+  }
+
+  private async runOnboardingCheck(checkName: OnboardingCheckName, check: () => Promise<void>): Promise<void> {
+    this.panelRoot.companionPanel.setOnboardingCheckState(checkName, "checking");
+    try {
+      await check();
+      this.panelRoot.companionPanel.setOnboardingCheckState(checkName, "pass");
+    } catch (error) {
+      this.panelRoot.companionPanel.setOnboardingCheckState(
+        checkName,
+        "fail",
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }
+
+  private async handleDomChanged(): Promise<void> {
+    const semanticMapVersion = this.contextCollector.markDomChanged();
+    this.eventBus.emit("dom:changed", { semanticMapVersion });
+
+    if (!this.activeTaskId) {
+      return;
+    }
+
+    const context = await this.contextCollector.capture();
+    await this.applySemanticProviders(context);
+    this.eventBus.emit("semantic-map:updated", { context });
+  }
+
+  private async applySemanticProviders(context: ClickyCapturedContext): Promise<void> {
+    for (const semanticProvider of this.semanticProviders) {
+      await semanticProvider.collect(context);
+    }
+  }
+
+  private async loadMemory(): Promise<void> {
+    try {
+      const memory = await this.memoryClient.load();
+      if (memory?.conversationHistory) {
+        this.conversationHistory.splice(0, this.conversationHistory.length, ...memory.conversationHistory);
+      }
+      this.eventBus.emit("memory:loaded", { value: memory });
+    } catch (error) {
+      this.markProviderDegraded("memory", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private async saveMemory(): Promise<void> {
+    try {
+      await this.memoryClient.save(this.conversationHistory);
+      this.eventBus.emit("memory:saved", { ok: true });
+    } catch (error) {
+      this.markProviderDegraded("memory", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private async captureTelemetry(eventName: string, properties: Record<string, unknown> = {}): Promise<void> {
+    try {
+      await this.telemetryClient.capture(eventName, properties);
+      this.eventBus.emit("telemetry:sent", { eventName });
+    } catch (error) {
+      this.markProviderDegraded("telemetry", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private markProviderDegraded(provider: string, reason: string): void {
+    this.degradedProviders[provider] = reason;
+    this.eventBus.emit("provider:degraded", { provider, reason });
+  }
+
+  private markProviderRecovered(provider: string): void {
+    if (this.degradedProviders[provider]) {
+      delete this.degradedProviders[provider];
+      this.eventBus.emit("provider:recovered", { provider });
+    }
+  }
+
+  private setActiveProvider(capability: string, provider: string, reason?: string): void {
+    this.providerManager.setActiveProvider(capability, provider);
+    this.eventBus.emit("provider:switched", { capability, provider, reason });
+  }
+
+  private installInternalEventHandlers(): void {
+    this.eventBus.on("transcript:partial", ({ text }) => {
+      this.latestTranscript = text;
+      this.partialTranscriptCount += 1;
+      if (this.partialTranscriptCount % 5 === 0) {
+        this.logStage("stt.transcript.partial", { length: text.length, count: this.partialTranscriptCount });
+      }
+    });
+    this.eventBus.on("transcript:final", ({ text }) => {
+      this.latestTranscript = text;
+      this.logStage("stt.transcript.final", { length: text.length });
+      if (this.stateMachine.getState() === "transcribing" && !this.isProcessingTranscript) {
+        void this.processUserText(text);
+      }
+    });
+    this.eventBus.on("error", ({ error }) => {
+      this.logStage("error", { message: error.message });
+    });
+  }
+
+  private installHotkeyListeners(): void {
+    const pressedCodes = new Set<string>();
+
+    const keydownHandler = (event: KeyboardEvent) => {
+      if (event.repeat || this.isEditableTarget(event.target)) {
+        return;
+      }
+
+      pressedCodes.add(event.code);
+      if (this.matchesHotkey(event, pressedCodes)) {
+        event.preventDefault();
+        void this.startPushToTalk();
+      }
+    };
+
+    const keyupHandler = (event: KeyboardEvent) => {
+      pressedCodes.delete(event.code);
+      if (this.stateMachine.getState() === "listening") {
+        void this.stopPushToTalk();
+      }
+    };
+
+    window.addEventListener("keydown", keydownHandler);
+    window.addEventListener("keyup", keyupHandler);
+    window.addEventListener("blur", keyupHandler as EventListener);
+    this.lifecycle.add(() => {
+      window.removeEventListener("keydown", keydownHandler);
+      window.removeEventListener("keyup", keyupHandler);
+      window.removeEventListener("blur", keyupHandler as EventListener);
+    });
+  }
+
+  private matchesHotkey(event: KeyboardEvent, pressedCodes: Set<string>): boolean {
+    const hotkey = this.options.hotkey;
+    const modifierMatches =
+      event.ctrlKey === !!hotkey.ctrl &&
+      event.altKey === !!hotkey.alt &&
+      event.shiftKey === !!hotkey.shift &&
+      event.metaKey === !!hotkey.meta;
+
+    if (!modifierMatches) {
+      return false;
+    }
+
+    return hotkey.code ? pressedCodes.has(hotkey.code) : true;
+  }
+
+  private isEditableTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    return (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target.isContentEditable ||
+      target.getAttribute("role") === "textbox"
+    );
+  }
+
+  private trimConversationHistory(): void {
+    const maximumMessages = 16;
+    if (this.conversationHistory.length > maximumMessages) {
+      this.conversationHistory.splice(0, this.conversationHistory.length - maximumMessages);
+    }
+  }
+
+  private handleError(error: unknown): void {
+    const normalizedError = error instanceof Error ? error : new Error(String(error));
+    this.lastError = normalizedError.message;
+    this.logStage("error", { message: normalizedError.message });
+    this.eventBus.emit("error", { error: normalizedError });
+    this.panelRoot.companionPanel.appendMessage("assistant", normalizedError.message);
+    try {
+      this.stateMachine.setState("error");
+      this.stateMachine.setState("idle");
+    } catch {
+      // If an error occurs during another recovery transition, keep the UI usable.
+    }
+    this.isProcessingTranscript = false;
+  }
+
+  private handleVoiceCaptureError(error: unknown): void {
+    const normalizedError = error instanceof DOMException ? error : error instanceof Error ? error : new Error(String(error));
+    const isPermissionDenied =
+      normalizedError instanceof DOMException &&
+      (normalizedError.name === "NotAllowedError" || normalizedError.name === "SecurityError");
+    const message = isPermissionDenied
+      ? "Microphone permission is blocked for this page. Click the site icon in the address bar, allow Microphone for 127.0.0.1, then reload the demo."
+      : normalizedError.message;
+
+    this.lastError = message;
+    this.logStage("voice.capture.error", { message, name: normalizedError.name });
+    if (isPermissionDenied) {
+      this.eventBus.emit("mic:permission-denied", { error: new Error(message) });
+    }
+    this.eventBus.emit("error", { error: new Error(message) });
+    this.panelRoot.companionPanel.appendMessage("assistant", message);
+    this.micCapture.stop();
+    this.activeVoiceSessionId = undefined;
+    this.isStreamingSttReady = false;
+    this.stateMachine.setState("idle");
+    this.endTask("error");
+  }
+
+  private logStage(stage: string, details: Record<string, unknown> = {}): void {
+    const timestamp = new Date().toISOString();
+    const sinceTaskMs = this.taskStartedAt
+      ? Math.round(performance.now() - this.taskStartedAt)
+      : undefined;
+    this.logger.info(stage, {
+      timestamp,
+      sinceTaskMs,
+      ...details
+    });
+  }
+}

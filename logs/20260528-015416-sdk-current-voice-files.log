@@ -1,0 +1,329 @@
+**********************
+PowerShell transcript start
+Start time: 20260528015417
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$logPath = Join-Path 'C:\Users\jadha\clicky.ai\logs' "$timestamp-sdk-current-voice-files.log"
+Start-Transcript -Path $logPath -Force | Out-Null
+Write-Output '--- demo main ---'
+Get-Content demo\main.ts
+Write-Output '--- ClickyClient matches ---'
+Select-String -Path src\core\ClickyClient.ts -Pattern 'BrowserSpeech|selectedMicrophone|Mic source|sttToken|sttUpload|enableTTS|startPushToTalk|micCapture.start|queue_flushed|createEmptyTranscriptionMessage' -Context 2,2
+Write-Output '--- MicCapture ---'
+Get-Content src\audio\MicCapture.ts
+Stop-Transcript | Out-Null
+Get-Content $logPath
+Process ID: 23808
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+--- demo main ---
+import { ClickySDK } from "../src";
+
+const clicky = ClickySDK.init({
+  workerBaseUrl: import.meta.env.VITE_CLICKY_WORKER_BASE_URL ?? "http://localhost:8787",
+  appName: "Acme CRM Demo",
+  enableScreenshots: false,
+  enableTTS: true,
+  enableLocalFallback: true,
+  apiRoutes: {
+    chat: "/ai/chat",
+    sttToken: "/voice/stt-token",
+    tts: "/voice/tts"
+  }
+});
+
+(window as unknown as { clickyDemo: typeof clicky }).clickyDemo = clicky;
+
+const diagnosticsElement = document.getElementById("clicky-diagnostics");
+
+function renderDiagnostics(eventName: string) {
+  if (!diagnosticsElement) {
+    return;
+  }
+
+  diagnosticsElement.textContent = JSON.stringify(
+    {
+      eventName,
+      diagnostics: clicky.getDiagnostics(),
+      updatedAt: new Date().toISOString()
+    },
+    null,
+    2
+  );
+}
+
+for (const eventName of [
+  "health:changed",
+  "task:started",
+  "task:ended",
+  "dom:changed",
+  "semantic-map:updated",
+  "cursor:targeted",
+  "cursor:missed",
+  "provider:degraded",
+  "provider:recovered",
+  "memory:loaded",
+  "memory:saved",
+  "telemetry:sent",
+  "error"
+] as const) {
+  clicky.on(eventName, () => renderDiagnostics(eventName));
+}
+
+renderDiagnostics("demo-loaded");
+
+clicky.registerAction({
+  id: "focusElement",
+  name: "Focus element",
+  description: "Focus a currently visible element by Clicky element id.",
+  parametersSchema: {
+    type: "object",
+    required: ["elementId"],
+    properties: {
+      elementId: { type: "string" }
+    }
+  },
+  async execute(parameters, context) {
+    const targetElement = context.elementRegistry.getElementById(String(parameters.elementId));
+    if (targetElement instanceof HTMLElement) {
+      targetElement.focus();
+      return { ok: true, message: "Focused element" };
+    }
+    return { ok: false, message: "Element not found" };
+  }
+});
+
+clicky.registerAction({
+  id: "clickElement",
+  name: "Click element",
+  description: "Click a currently visible safe element by Clicky element id.",
+  parametersSchema: {
+    type: "object",
+    required: ["elementId"],
+    properties: {
+      elementId: { type: "string" }
+    }
+  },
+  async execute(parameters, context) {
+    const targetElement = context.elementRegistry.getElementById(String(parameters.elementId));
+    if (targetElement instanceof HTMLElement) {
+      targetElement.click();
+      return { ok: true, message: "Clicked element" };
+    }
+    return { ok: false, message: "Element not found" };
+  }
+});
+--- ClickyClient matches ---
+
+  src\core\ClickyClient.ts:40:} from "./types";
+  src\core\ClickyClient.ts:41:
+> src\core\ClickyClient.ts:42:const selectedMicrophoneStorageKey = "clicky:selected-microphone-device-id";
+  src\core\ClickyClient.ts:43:
+  src\core\ClickyClient.ts:44:export class ClickyClient implements ClickyClientPublic {
+  src\core\ClickyClient.ts:89:  private audioLevelPeak = 0;
+  src\core\ClickyClient.ts:90:  private voiceLikeAudioFrameCount = 0;
+> src\core\ClickyClient.ts:91:  private selectedMicrophoneDeviceId = this.loadSelectedMicrophoneDeviceId();
+  src\core\ClickyClient.ts:92:
+  src\core\ClickyClient.ts:93:  constructor(rawOptions: ClickyOptions) {
+  src\core\ClickyClient.ts:140:  }
+  src\core\ClickyClient.ts:141:
+> src\core\ClickyClient.ts:142:  async startPushToTalk(): Promise<void> {
+  src\core\ClickyClient.ts:143:    if (!this.options.enableVoice || this.stateMachine.getState() !== "idle") {
+  src\core\ClickyClient.ts:144:      return;
+  src\core\ClickyClient.ts:163:      this.logStage("mic.permission.requested");
+  src\core\ClickyClient.ts:164:      this.micCapture.onAudioFrame((pcm16Frame) =>
+this.handleMicAudioFrame(voiceSessionId, pcm16Frame));
+> src\core\ClickyClient.ts:165:      const sampleRate = await this.micCapture.start(this.selectedMicrophoneDeviceId || 
+undefined);
+  src\core\ClickyClient.ts:166:      this.recordedSampleRate = sampleRate;
+  src\core\ClickyClient.ts:167:      void this.refreshMicrophoneDevices();
+  src\core\ClickyClient.ts:216:      this.panelRoot.companionPanel.appendMessage(
+  src\core\ClickyClient.ts:217:        "assistant",
+> src\core\ClickyClient.ts:218:        this.createEmptyTranscriptionMessage()
+  src\core\ClickyClient.ts:219:      );
+  src\core\ClickyClient.ts:220:    }
+  src\core\ClickyClient.ts:265:    }
+  src\core\ClickyClient.ts:266:    this.queuedPcm16FramesForStt.splice(0);
+> src\core\ClickyClient.ts:267:    this.logStage("stt.audio.queue_flushed", { frames: queuedFrameCount });
+  src\core\ClickyClient.ts:268:  }
+  src\core\ClickyClient.ts:269:
+  src\core\ClickyClient.ts:290:  }
+  src\core\ClickyClient.ts:291:
+> src\core\ClickyClient.ts:292:  private createEmptyTranscriptionMessage(): string {
+  src\core\ClickyClient.ts:293:    if (this.audioLevelPeak < 0.006 || this.voiceLikeAudioFrameCount === 0) {
+> src\core\ClickyClient.ts:294:      return "The microphone opened, but the selected input is sending silence. Choose
+another Mic source in Clicky, then hold Mic and speak again.";
+  src\core\ClickyClient.ts:295:    }
+  src\core\ClickyClient.ts:296:
+  src\core\ClickyClient.ts:327:
+  src\core\ClickyClient.ts:328:    if (options.inputMode === "voice") {
+> src\core\ClickyClient.ts:329:      await this.startPushToTalk();
+  src\core\ClickyClient.ts:330:      return;
+  src\core\ClickyClient.ts:331:    }
+  src\core\ClickyClient.ts:429:      await this.saveMemory();
+  src\core\ClickyClient.ts:430:
+> src\core\ClickyClient.ts:431:      if (this.options.enableTTS && cleanedResponse.spokenText) {
+  src\core\ClickyClient.ts:432:        this.stateMachine.setState("speaking");
+  src\core\ClickyClient.ts:433:        const ttsStartedAt = performance.now();
+  src\core\ClickyClient.ts:594:      const audioInputDevices = await this.micCapture.listAudioInputDevices();
+  src\core\ClickyClient.ts:595:      const selectedDeviceStillExists =
+> src\core\ClickyClient.ts:596:        !this.selectedMicrophoneDeviceId ||
+> src\core\ClickyClient.ts:597:        audioInputDevices.some((device) => device.deviceId ===
+this.selectedMicrophoneDeviceId);
+  src\core\ClickyClient.ts:598:      if (!selectedDeviceStillExists) {
+> src\core\ClickyClient.ts:599:        this.selectedMicrophoneDeviceId = "";
+> src\core\ClickyClient.ts:600:        this.saveSelectedMicrophoneDeviceId("");
+  src\core\ClickyClient.ts:601:      }
+> src\core\ClickyClient.ts:602:      this.panelRoot.companionPanel.setMicDevices(audioInputDevices,
+this.selectedMicrophoneDeviceId);
+  src\core\ClickyClient.ts:603:      this.logStage("mic.devices.refreshed", {
+  src\core\ClickyClient.ts:604:        count: audioInputDevices.length,
+> src\core\ClickyClient.ts:605:        selectedDeviceId: this.selectedMicrophoneDeviceId || "browser-default",
+  src\core\ClickyClient.ts:606:        labels: audioInputDevices.map((device) => device.label)
+  src\core\ClickyClient.ts:607:      });
+  src\core\ClickyClient.ts:612:
+  src\core\ClickyClient.ts:613:  private selectMicrophoneDevice(deviceId: string): void {
+> src\core\ClickyClient.ts:614:    this.selectedMicrophoneDeviceId = deviceId;
+> src\core\ClickyClient.ts:615:    this.saveSelectedMicrophoneDeviceId(deviceId);
+  src\core\ClickyClient.ts:616:    this.panelRoot.companionPanel.setMicDevices([], deviceId);
+  src\core\ClickyClient.ts:617:    void this.refreshMicrophoneDevices();
+  src\core\ClickyClient.ts:619:  }
+  src\core\ClickyClient.ts:620:
+> src\core\ClickyClient.ts:621:  private loadSelectedMicrophoneDeviceId(): string {
+  src\core\ClickyClient.ts:622:    try {
+> src\core\ClickyClient.ts:623:      return window.localStorage.getItem(selectedMicrophoneStorageKey) ?? "";
+  src\core\ClickyClient.ts:624:    } catch {
+  src\core\ClickyClient.ts:625:      return "";
+  src\core\ClickyClient.ts:627:  }
+  src\core\ClickyClient.ts:628:
+> src\core\ClickyClient.ts:629:  private saveSelectedMicrophoneDeviceId(deviceId: string): void {
+  src\core\ClickyClient.ts:630:    try {
+  src\core\ClickyClient.ts:631:      if (deviceId) {
+> src\core\ClickyClient.ts:632:        window.localStorage.setItem(selectedMicrophoneStorageKey, deviceId);
+  src\core\ClickyClient.ts:633:      } else {
+> src\core\ClickyClient.ts:634:        window.localStorage.removeItem(selectedMicrophoneStorageKey);
+  src\core\ClickyClient.ts:635:      }
+  src\core\ClickyClient.ts:636:    } catch {
+  src\core\ClickyClient.ts:731:      if (this.matchesHotkey(event, pressedCodes)) {
+  src\core\ClickyClient.ts:732:        event.preventDefault();
+> src\core\ClickyClient.ts:733:        void this.startPushToTalk();
+  src\core\ClickyClient.ts:734:      }
+  src\core\ClickyClient.ts:735:    };
+--- MicCapture ---
+import { floatToPcm16 } from "./PcmEncoder";
+import { Logger } from "../utils/logger";
+
+export type AudioFrameHandler = (pcm16Frame: Int16Array) => void;
+export type AudioLevelHandler = (level: number) => void;
+export type AudioInputDevice = {
+  deviceId: string;
+  label: string;
+};
+
+export class MicCapture {
+  private stream?: MediaStream;
+  private audioContext?: AudioContext;
+  private processor?: ScriptProcessorNode;
+  private source?: MediaStreamAudioSourceNode;
+  private audioFrameHandler?: AudioFrameHandler;
+  private audioLevelHandler?: AudioLevelHandler;
+  private readonly logger = new Logger("ClickyMic", "info");
+
+  onAudioFrame(handler: AudioFrameHandler): void {
+    this.audioFrameHandler = handler;
+  }
+
+  onAudioLevel(handler: AudioLevelHandler): void {
+    this.audioLevelHandler = handler;
+  }
+
+  async start(deviceId?: string): Promise<number> {
+    this.logger.info("mic.permission.requested");
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
+    this.logger.info("mic.permission.granted");
+    this.logger.info("mic.device.active", {
+      label: this.stream.getAudioTracks()[0]?.label ?? "unknown",
+      deviceId: deviceId ?? "browser-default"
+    });
+
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    this.audioContext = new AudioContextConstructor({ sampleRate: 16000 });
+    this.source = this.audioContext.createMediaStreamSource(this.stream);
+
+    // ScriptProcessor remains the broadest baseline. The separate worklet file is
+    // provided for browsers/hosts that want to swap in AudioWorklet later.
+    this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+    this.processor.onaudioprocess = (event) => {
+      const channelData = event.inputBuffer.getChannelData(0);
+      this.audioLevelHandler?.(this.calculateLevel(channelData));
+      this.audioFrameHandler?.(floatToPcm16(channelData));
+    };
+
+    this.source.connect(this.processor);
+    this.processor.connect(this.audioContext.destination);
+    this.logger.info("mic.capture.started", { sampleRate: this.audioContext.sampleRate });
+    return this.audioContext.sampleRate;
+  }
+
+  async listAudioInputDevices(): Promise<AudioInputDevice[]> {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices
+      .filter((device) => device.kind === "audioinput")
+      .map((device, index) => ({
+        deviceId: device.deviceId,
+        label: device.label || `Microphone ${index + 1}`
+      }));
+  }
+
+  stop(): void {
+    this.logger.info("mic.capture.stopping");
+    this.processor?.disconnect();
+    this.source?.disconnect();
+
+    for (const track of this.stream?.getTracks() ?? []) {
+      track.stop();
+    }
+
+    if (this.audioContext && this.audioContext.state !== "closed") {
+      void this.audioContext.close();
+    }
+
+    this.processor = undefined;
+    this.source = undefined;
+    this.stream = undefined;
+    this.audioContext = undefined;
+    this.logger.info("mic.capture.stopped");
+  }
+
+  private calculateLevel(samples: Float32Array): number {
+    let total = 0;
+    for (const sample of samples) {
+      total += sample * sample;
+    }
+    return Math.min(1, Math.sqrt(total / samples.length) * 5);
+  }
+}
+**********************
+PowerShell transcript end
+End time: 20260528015417
+**********************

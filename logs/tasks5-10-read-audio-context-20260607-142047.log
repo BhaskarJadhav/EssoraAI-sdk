@@ -1,0 +1,270 @@
+**********************
+PowerShell transcript start
+Start time: 20260607142048
+Username: JADHAV\jadha
+RunAs User: JADHAV\jadha
+Configuration Name: 
+Machine: JADHAV (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.2.0_x64__8wekyb3d8bbwe\pwsh.dll -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'; $logDir = Join-Path 'C:\Users\jadha\clicky.ai' 'logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $logPath = Join-Path $logDir "tasks5-10-read-audio-context-$timestamp.log"; Start-Transcript -Path $logPath -Force | Out-Null; Write-Host "LOG_PATH=$logPath"; Get-Content .\clicky-web-sdk\src\audio\MicCapture.ts -Raw; Get-Content .\clicky-web-sdk\src\audio\VoiceActivityMeter.ts -Raw; Get-Content .\clicky-web-sdk\src\context\ScreenshotCapture.ts -Raw; Get-Content .\clicky-web-sdk\demo\main.ts -Raw; Stop-Transcript | Out-Null
+Process ID: 1988
+PSVersion: 7.6.2
+PSEdition: Core
+GitCommitId: 7.6.2
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+LOG_PATH=C:\Users\jadha\clicky.ai\logs\tasks5-10-read-audio-context-20260607-142047.log
+import { floatToPcm16 } from "./PcmEncoder";
+import { Logger } from "../utils/logger";
+
+export type AudioFrameHandler = (pcm16Frame: Int16Array) => void;
+export type AudioLevelHandler = (level: number) => void;
+
+export class MicCapture {
+  private stream?: MediaStream;
+  private audioContext?: AudioContext;
+  private processor?: ScriptProcessorNode;
+  private source?: MediaStreamAudioSourceNode;
+  private audioFrameHandler?: AudioFrameHandler;
+  private audioLevelHandler?: AudioLevelHandler;
+  private readonly logger = new Logger("ClickyMic", "info");
+
+  onAudioFrame(handler: AudioFrameHandler): void {
+    this.audioFrameHandler = handler;
+  }
+
+  onAudioLevel(handler: AudioLevelHandler): void {
+    this.audioLevelHandler = handler;
+  }
+
+  async start(): Promise<number> {
+    this.logger.info("mic.permission.requested");
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
+    this.logger.info("mic.permission.granted");
+    this.logger.info("mic.device.active", {
+      label: this.stream.getAudioTracks()[0]?.label ?? "unknown"
+    });
+
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    this.audioContext = new AudioContextConstructor({ sampleRate: 16000 });
+    this.source = this.audioContext.createMediaStreamSource(this.stream);
+
+    // ScriptProcessor remains the broadest baseline. The separate worklet file is
+    // provided for browsers/hosts that want to swap in AudioWorklet later.
+    this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+    this.processor.onaudioprocess = (event) => {
+      const channelData = event.inputBuffer.getChannelData(0);
+      this.audioLevelHandler?.(this.calculateLevel(channelData));
+      this.audioFrameHandler?.(floatToPcm16(channelData));
+    };
+
+    this.source.connect(this.processor);
+    this.processor.connect(this.audioContext.destination);
+    this.logger.info("mic.capture.started", { sampleRate: this.audioContext.sampleRate });
+    return this.audioContext.sampleRate;
+  }
+
+  stop(): void {
+    this.logger.info("mic.capture.stopping");
+    this.processor?.disconnect();
+    this.source?.disconnect();
+
+    for (const track of this.stream?.getTracks() ?? []) {
+      track.stop();
+    }
+
+    if (this.audioContext && this.audioContext.state !== "closed") {
+      void this.audioContext.close();
+    }
+
+    this.processor = undefined;
+    this.source = undefined;
+    this.stream = undefined;
+    this.audioContext = undefined;
+    this.logger.info("mic.capture.stopped");
+  }
+
+  private calculateLevel(samples: Float32Array): number {
+    let total = 0;
+    for (const sample of samples) {
+      total += sample * sample;
+    }
+    return Math.min(1, Math.sqrt(total / samples.length) * 5);
+  }
+}
+export class VoiceActivityMeter {
+  private currentLevel = 0;
+
+  setLevel(level: number): void {
+    this.currentLevel = Math.max(0, Math.min(1, level));
+  }
+
+  getLevel(): number {
+    return this.currentLevel;
+  }
+}
+import type { ClickyScreenshot } from "../core/types";
+
+export class ScreenshotCapture {
+  async captureStill(label = "user-selected browser surface"): Promise<ClickyScreenshot> {
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      throw new Error("Screen capture is not supported in this browser");
+    }
+
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: false
+    });
+
+    try {
+      const video = document.createElement("video");
+      video.muted = true;
+      video.srcObject = stream;
+      await video.play();
+
+      await new Promise<void>((resolve) => {
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          resolve();
+          return;
+        }
+        video.onloadedmetadata = () => resolve();
+      });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        throw new Error("Could not create screenshot canvas context");
+      }
+
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/png");
+      const base64 = dataUrl.split(",")[1] ?? "";
+
+      return {
+        mimeType: "image/png",
+        base64,
+        width: canvas.width,
+        height: canvas.height,
+        label
+      };
+    } finally {
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+    }
+  }
+}
+import { ClickySDK } from "../src";
+
+const clicky = ClickySDK.init({
+  workerBaseUrl: import.meta.env.VITE_CLICKY_WORKER_BASE_URL ?? "http://localhost:8787",
+  appName: "Acme CRM Demo",
+  enableScreenshots: false,
+  enableTTS: true,
+  enableLocalFallback: true,
+  apiRoutes: {
+    chat: "/ai/chat",
+    sttToken: "/voice/stt-token",
+    tts: "/voice/tts"
+  }
+});
+
+(window as unknown as { clickyDemo: typeof clicky }).clickyDemo = clicky;
+
+const diagnosticsElement = document.getElementById("clicky-diagnostics");
+
+function renderDiagnostics(eventName: string) {
+  if (!diagnosticsElement) {
+    return;
+  }
+
+  diagnosticsElement.textContent = JSON.stringify(
+    {
+      eventName,
+      diagnostics: clicky.getDiagnostics(),
+      updatedAt: new Date().toISOString()
+    },
+    null,
+    2
+  );
+}
+
+for (const eventName of [
+  "health:changed",
+  "task:started",
+  "task:ended",
+  "dom:changed",
+  "semantic-map:updated",
+  "cursor:targeted",
+  "cursor:missed",
+  "provider:degraded",
+  "provider:recovered",
+  "memory:loaded",
+  "memory:saved",
+  "telemetry:sent",
+  "error"
+] as const) {
+  clicky.on(eventName, () => renderDiagnostics(eventName));
+}
+
+renderDiagnostics("demo-loaded");
+
+clicky.registerAction({
+  id: "focusElement",
+  name: "Focus element",
+  description: "Focus a currently visible element by Clicky element id.",
+  parametersSchema: {
+    type: "object",
+    required: ["elementId"],
+    properties: {
+      elementId: { type: "string" }
+    }
+  },
+  async execute(parameters, context) {
+    const targetElement = context.elementRegistry.getElementById(String(parameters.elementId));
+    if (targetElement instanceof HTMLElement) {
+      targetElement.focus();
+      return { ok: true, message: "Focused element" };
+    }
+    return { ok: false, message: "Element not found" };
+  }
+});
+
+clicky.registerAction({
+  id: "clickElement",
+  name: "Click element",
+  description: "Click a currently visible safe element by Clicky element id.",
+  parametersSchema: {
+    type: "object",
+    required: ["elementId"],
+    properties: {
+      elementId: { type: "string" }
+    }
+  },
+  async execute(parameters, context) {
+    const targetElement = context.elementRegistry.getElementById(String(parameters.elementId));
+    if (targetElement instanceof HTMLElement) {
+      targetElement.click();
+      return { ok: true, message: "Clicked element" };
+    }
+    return { ok: false, message: "Element not found" };
+  }
+});
+**********************
+PowerShell transcript end
+End time: 20260607142048
+**********************
