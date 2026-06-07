@@ -18,7 +18,7 @@ To make the SDK persist across page loads in HubSpot, we use Tampermonkey.
 Install Tampermonkey: Install the Tampermonkey browser extension for Chrome/Edge.
 Create a New Script: Click the Tampermonkey extension icon and select Create a new script...
 Paste the Injector Code: Delete the default template and paste the following code exactly as it appears:
-javascript
+javascript all working poplery 
 
 // ==UserScript==
 // @name         Clicky SDK HubSpot Injector
